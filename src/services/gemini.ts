@@ -1,13 +1,64 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { dbService } from './db';
 
-function getModel(modelName = 'gemini-1.5-flash') {
+// Model fallback chain: try primary first, then fall back to lighter models
+const MODEL_CHAIN = [
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite-preview-06-17',
+  'gemini-2.0-flash',
+];
+
+function getModel(modelName: string) {
   const apiKey = dbService.getApiKey();
   if (!apiKey) {
     throw new Error('Gemini API key is not configured. Please add your key in settings.');
   }
   const genAI = new GoogleGenerativeAI(apiKey);
   return genAI.getGenerativeModel({ model: modelName });
+}
+
+/** Sleep for `ms` milliseconds */
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Calls `fn` with the model, retrying on 503/429 with exponential backoff.
+ * If all retries fail for the primary model, falls through the MODEL_CHAIN.
+ */
+async function withRetry<T>(
+  fn: (model: ReturnType<typeof getModel>) => Promise<T>,
+  maxRetries = 3
+): Promise<T> {
+  let lastError: Error | null = null;
+
+  for (const modelName of MODEL_CHAIN) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const model = getModel(modelName);
+        return await fn(model);
+      } catch (err: any) {
+        const msg: string = err?.message ?? '';
+        const isTransient = msg.includes('503') || msg.includes('429') || msg.includes('overloaded');
+
+        if (!isTransient) {
+          // Non-transient error (e.g. 400 bad request, auth) — re-throw immediately
+          throw err;
+        }
+
+        lastError = err;
+        const backoffMs = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+        console.warn(`[Studit] ${modelName} returned ${msg.includes('503') ? '503' : '429'}, retrying in ${backoffMs / 1000}s... (attempt ${attempt + 1}/${maxRetries})`);
+        await sleep(backoffMs);
+      }
+    }
+    console.warn(`[Studit] ${modelName} exhausted retries, trying next model in chain...`);
+  }
+
+  // All models failed
+  throw new Error(
+    `All models are temporarily unavailable (high demand). Please try again in a minute.\n\nDetails: ${lastError?.message ?? 'Unknown error'}`
+  );
 }
 
 export interface ChatMessage {
@@ -21,10 +72,8 @@ export const geminiService = {
     history: ChatMessage[],
     message: string
   ): Promise<string> {
-    const model = getModel();
-
-    // Prepare system instructions and initial context
-    const systemInstruction = `You are Studit, a brilliant and supportive AI university study assistant.
+    return withRetry(async (model) => {
+      const systemInstruction = `You are Studit, a brilliant and supportive AI university study assistant.
 Your goal is to help students learn, digest, and master their course materials.
 
 Below is the text content of the student's study materials (documents/notes) that they have uploaded:
@@ -37,22 +86,22 @@ Guidelines:
 2. If the user asks about topics NOT mentioned in the study materials, you may answer using your general knowledge, but explicitly state that this information is not in their uploaded notes.
 3. Be clear, pedagogical, and encouraging. Use markdown for neat styling, code blocks, lists, and bold text.`;
 
-    const chat = model.startChat({
-      history: history.map((msg) => ({
-        role: msg.role === 'user' ? 'user' : 'model',
-        parts: msg.parts
-      })),
-      systemInstruction: systemInstruction
-    });
+      const chat = model.startChat({
+        history: history.map((msg) => ({
+          role: msg.role === 'user' ? 'user' : 'model',
+          parts: msg.parts
+        })),
+        systemInstruction
+      });
 
-    const result = await chat.sendMessage(message);
-    const response = await result.response;
-    return response.text();
+      const result = await chat.sendMessage(message);
+      return result.response.text();
+    });
   },
 
   async generateSummary(docTitle: string, docContent: string): Promise<string> {
-    const model = getModel();
-    const prompt = `You are a study expert. Create a clear, high-quality, and comprehensive summary of the document titled "${docTitle}".
+    return withRetry(async (model) => {
+      const prompt = `You are a study expert. Create a clear, high-quality, and comprehensive summary of the document titled "${docTitle}".
 Structure your response as follows:
 1. **Quick Overview**: A 2-3 sentence high-level summary of the entire document.
 2. **Key Themes/Core Topics**: Detail the main topics covered, including definitions of key terms.
@@ -63,13 +112,14 @@ Use clean markdown, bold headers, and bullet points.
 Document content:
 ${docContent}`;
 
-    const result = await model.generateContent(prompt);
-    return result.response.text();
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    });
   },
 
   async generateStudyGuide(notebookName: string, sourcesContext: string): Promise<string> {
-    const model = getModel();
-    const prompt = `You are a professional university tutor. Create a comprehensive, student-friendly Study Guide based on all materials in the Notebook "${notebookName}".
+    return withRetry(async (model) => {
+      const prompt = `You are a professional university tutor. Create a comprehensive, student-friendly Study Guide based on all materials in the Notebook "${notebookName}".
 
 Sources:
 -----------------------------------------
@@ -84,13 +134,14 @@ Please format the guide with:
 
 Ensure the styling is highly visual and easy to scan. Use emojis, dividers, and bullet lists.`;
 
-    const result = await model.generateContent(prompt);
-    return result.response.text();
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    });
   },
 
   async generateMindMap(docTitle: string, docContent: string): Promise<string> {
-    const model = getModel();
-    const prompt = `You are a mind-mapping assistant that visualizes connections between ideas.
+    return withRetry(async (model) => {
+      const prompt = `You are a mind-mapping assistant that visualizes connections between ideas.
 Analyze the document titled "${docTitle}" and generate a hierarchical, conceptual mind map using Mermaid.js syntax.
 
 RULES for the Mermaid diagram:
@@ -108,8 +159,8 @@ graph TD
 Here is the document content to map:
 ${docContent}`;
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-    return responseText;
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    });
   }
 };

@@ -255,6 +255,7 @@ export const DocViewer: React.FC<DocViewerProps> = ({
                 code={mindMapCode || ''} 
                 onRegenerate={onGenerateMindMap}
                 isGenerating={isGeneratingMindMap}
+                docTitle={activeDoc.name}
               />
             )}
           </div>
