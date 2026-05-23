@@ -15,8 +15,32 @@ export interface DocumentData {
   mindmap?: string;
 }
 
+// ─── Flashcard types ─────────────────────────────────────────────────────────
+
+export interface Flashcard {
+  id: string;
+  front: string;       // term / question
+  back: string;        // definition / answer
+  // Spaced-repetition fields (simplified SM-2)
+  interval: number;    // days until next review
+  easeFactor: number;  // multiplier (1.3 – 2.5)
+  nextReview: number;  // timestamp (ms)
+  reviewCount: number;
+}
+
+export interface FlashcardDeck {
+  id: string;          // same as docId for simplicity (one deck per doc)
+  docId: string;
+  notebookId: string;
+  cards: Flashcard[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const DB_NAME = 'studit_db';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // bumped to add flashcard_decks store
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -25,8 +49,9 @@ function openDB(): Promise<IDBDatabase> {
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
 
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
+
       if (!db.objectStoreNames.contains('notebooks')) {
         db.createObjectStore('notebooks', { keyPath: 'id' });
       }
@@ -34,12 +59,21 @@ function openDB(): Promise<IDBDatabase> {
         const docStore = db.createObjectStore('documents', { keyPath: 'id' });
         docStore.createIndex('notebookId', 'notebookId', { unique: false });
       }
+      // New in v2
+      if (!db.objectStoreNames.contains('flashcard_decks')) {
+        const deckStore = db.createObjectStore('flashcard_decks', { keyPath: 'id' });
+        deckStore.createIndex('docId', 'docId', { unique: true });
+        deckStore.createIndex('notebookId', 'notebookId', { unique: false });
+      }
+
+      // Suppress unused-variable warning
+      void event;
     };
   });
 }
 
 export const dbService = {
-  // Notebooks CRUD
+  // ── Notebooks CRUD ──────────────────────────────────────────────────────────
   async getNotebooks(): Promise<Notebook[]> {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -49,7 +83,6 @@ export const dbService = {
 
       request.onsuccess = () => {
         const list = request.result as Notebook[];
-        // Sort by newest
         resolve(list.sort((a, b) => b.createdAt - a.createdAt));
       };
       request.onerror = () => reject(request.error);
@@ -62,7 +95,6 @@ export const dbService = {
       const transaction = db.transaction('notebooks', 'readwrite');
       const store = transaction.objectStore('notebooks');
       const request = store.put(notebook);
-
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
@@ -70,7 +102,6 @@ export const dbService = {
 
   async deleteNotebook(id: string): Promise<void> {
     const db = await openDB();
-    // Also delete all documents under this notebook
     const docs = await this.getDocumentsByNotebook(id);
     for (const doc of docs) {
       await this.deleteDocument(doc.id);
@@ -80,13 +111,12 @@ export const dbService = {
       const transaction = db.transaction('notebooks', 'readwrite');
       const store = transaction.objectStore('notebooks');
       const request = store.delete(id);
-
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
   },
 
-  // Documents CRUD
+  // ── Documents CRUD ──────────────────────────────────────────────────────────
   async getDocumentsByNotebook(notebookId: string): Promise<DocumentData[]> {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -109,7 +139,6 @@ export const dbService = {
       const transaction = db.transaction('documents', 'readwrite');
       const store = transaction.objectStore('documents');
       const request = store.put(doc);
-
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
@@ -121,13 +150,47 @@ export const dbService = {
       const transaction = db.transaction('documents', 'readwrite');
       const store = transaction.objectStore('documents');
       const request = store.delete(id);
-
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
   },
 
-  // API Key Storage (uses localStorage since it's simple and global)
+  // ── Flashcard Decks CRUD ────────────────────────────────────────────────────
+  async getDeckByDocId(docId: string): Promise<FlashcardDeck | null> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction('flashcard_decks', 'readonly');
+      const store = transaction.objectStore('flashcard_decks');
+      const index = store.index('docId');
+      const request = index.get(docId);
+      request.onsuccess = () => resolve((request.result as FlashcardDeck) ?? null);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  async saveDeck(deck: FlashcardDeck): Promise<void> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction('flashcard_decks', 'readwrite');
+      const store = transaction.objectStore('flashcard_decks');
+      const request = store.put(deck);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  async deleteDeck(id: string): Promise<void> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction('flashcard_decks', 'readwrite');
+      const store = transaction.objectStore('flashcard_decks');
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  // ── API Key ─────────────────────────────────────────────────────────────────
   getApiKey(): string {
     return localStorage.getItem('studit_gemini_api_key') || '';
   },
