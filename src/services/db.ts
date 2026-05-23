@@ -2,6 +2,7 @@ export interface Notebook {
   id: string;
   name: string;
   createdAt: number;
+  notes?: string;
 }
 
 export interface DocumentData {
@@ -140,6 +141,17 @@ export const dbService = {
       const store = transaction.objectStore('documents');
       const request = store.put(doc);
       request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  async getAllDocuments(): Promise<DocumentData[]> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction('documents', 'readonly');
+      const store = transaction.objectStore('documents');
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result as DocumentData[]);
       request.onerror = () => reject(request.error);
     });
   },

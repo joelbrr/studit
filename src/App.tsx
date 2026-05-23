@@ -2,23 +2,51 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DocViewer } from './components/DocViewer';
 import { AICopilot } from './components/AICopilot';
-import { dbService, type Notebook, type DocumentData } from './services/db';
+import { NotebookScratchpad } from './components/NotebookScratchpad';
+import { dbService, type Notebook, type DocumentData, type Flashcard, type FlashcardDeck } from './services/db';
 import { geminiService } from './services/gemini';
 import { X, Key } from 'lucide-react';
+
+function sm2Update(card: Flashcard, rating: 'easy' | 'medium' | 'hard'): Flashcard {
+  const q = rating === 'easy' ? 5 : rating === 'medium' ? 3 : 1;
+  let { easeFactor, interval, reviewCount } = card;
+  if (q < 3) {
+    interval = 1;
+  } else {
+    if (reviewCount === 0) interval = 1;
+    else if (reviewCount === 1) interval = 6;
+    else interval = Math.round(interval * easeFactor);
+  }
+  easeFactor = Math.max(1.3, easeFactor + 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
+  return {
+    ...card,
+    interval,
+    easeFactor,
+    reviewCount: reviewCount + 1,
+    nextReview: Date.now() + interval * 24 * 60 * 60 * 1000,
+  };
+}
 
 export const App: React.FC = () => {
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
-  
-  const [activeTab, setActiveTab] = useState<'reader' | 'mindmap'>('reader');
+
+  const [activeTab, setActiveTab] = useState<'reader' | 'mindmap' | 'flashcards'>('reader');
   const [showSettings, setShowSettings] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
-  
+
   // Generating states
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isGeneratingMindMap, setIsGeneratingMindMap] = useState(false);
+  const [isGeneratingFlashcards, setIsGeneratingFlashcards] = useState(false);
+
+  // Flashcard deck for the active document
+  const [activeFlashcardDeck, setActiveFlashcardDeck] = useState<FlashcardDeck | null>(null);
+
+  // Notebook scratchpad
+  const [showScratchpad, setShowScratchpad] = useState(false);
 
   // Load notebooks on mount
   useEffect(() => {
@@ -35,6 +63,22 @@ export const App: React.FC = () => {
   useEffect(() => {
     loadDocuments();
   }, [activeNotebookId]);
+
+  // Auto-dismiss scratchpad when a document is selected
+  useEffect(() => {
+    if (activeDocId) setShowScratchpad(false);
+  }, [activeDocId]);
+
+  // Load flashcard deck when active document changes
+  useEffect(() => {
+    if (!activeDocId) {
+      setActiveFlashcardDeck(null);
+      return;
+    }
+    dbService.getDeckByDocId(activeDocId)
+      .then((deck) => setActiveFlashcardDeck(deck))
+      .catch((err) => console.error('Failed to load flashcard deck', err));
+  }, [activeDocId]);
 
   const loadNotebooks = async () => {
     try {
@@ -92,6 +136,77 @@ export const App: React.FC = () => {
     }
   };
 
+  // Save scratchpad content as a new document in Sources
+  const handleSaveNotesAsDocument = async (content: string) => {
+    if (!activeNotebook) return;
+    const timestamp = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const newDoc: DocumentData = {
+      id: crypto.randomUUID(),
+      notebookId: activeNotebook.id,
+      name: `${activeNotebook.name} — Scratchpad ${timestamp}.md`,
+      content,
+      type: 'md',
+      createdAt: Date.now(),
+    };
+    await dbService.saveDocument(newDoc);
+    await loadDocuments();
+    setActiveDocId(newDoc.id);
+    setShowScratchpad(false);
+  };
+
+  // Notebook scratchpad save
+  const handleSaveNotebookNotes = async (notes: string) => {
+    if (!activeNotebook) return;
+    const updatedNotebook: Notebook = { ...activeNotebook, notes };
+    setNotebooks((prev) => prev.map((nb) => nb.id === updatedNotebook.id ? updatedNotebook : nb));
+    await dbService.saveNotebook(updatedNotebook);
+  };
+
+  // Flashcard generation action
+  const handleGenerateFlashcards = async () => {
+    if (!activeDoc || !activeNotebookId) return;
+    setIsGeneratingFlashcards(true);
+    try {
+      const pairs = await geminiService.generateFlashcards(activeDoc.name, activeDoc.content);
+      const now = Date.now();
+      const cards: Flashcard[] = pairs.map((p, i) => ({
+        id: `${activeDoc.id}_card_${i}_${now}`,
+        front: p.front,
+        back: p.back,
+        interval: 1,
+        easeFactor: 2.5,
+        nextReview: now,
+        reviewCount: 0,
+      }));
+      const deck: FlashcardDeck = {
+        id: activeDoc.id,
+        docId: activeDoc.id,
+        notebookId: activeNotebookId,
+        cards,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await dbService.saveDeck(deck);
+      setActiveFlashcardDeck(deck);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to generate flashcards: ' + (err as Error).message);
+    } finally {
+      setIsGeneratingFlashcards(false);
+    }
+  };
+
+  // Spaced-repetition card rating
+  const handleRateCard = async (cardId: string, rating: 'easy' | 'medium' | 'hard') => {
+    if (!activeFlashcardDeck) return;
+    const updatedCards = activeFlashcardDeck.cards.map((c) =>
+      c.id === cardId ? sm2Update(c, rating) : c
+    );
+    const updatedDeck: FlashcardDeck = { ...activeFlashcardDeck, cards: updatedCards, updatedAt: Date.now() };
+    setActiveFlashcardDeck(updatedDeck);
+    await dbService.saveDeck(updatedDeck);
+  };
+
   // Mind map generation action
   const handleGenerateMindMap = async () => {
     if (!activeDoc) return;
@@ -127,10 +242,19 @@ export const App: React.FC = () => {
           documents={documents}
           onRefreshDocuments={loadDocuments}
           onOpenSettings={() => setShowSettings(true)}
+          isScratchpadOpen={showScratchpad}
+          onOpenScratchpad={() => { setShowScratchpad(true); setActiveDocId(null); }}
         />
 
         {/* Workspace Central Canvas */}
         <div className="workspace-container">
+          {showScratchpad && activeNotebook ? (
+            <NotebookScratchpad
+              notebook={activeNotebook}
+              onSave={handleSaveNotebookNotes}
+              onSaveAsDocument={handleSaveNotesAsDocument}
+            />
+          ) : (
           <DocViewer
             activeDoc={activeDoc}
             activeTab={activeTab}
@@ -142,7 +266,12 @@ export const App: React.FC = () => {
             isGeneratingMindMap={isGeneratingMindMap}
             mindMapCode={activeDoc?.mindmap || null}
             geminiApiKeyExists={hasApiKey}
+            flashcardDeck={activeFlashcardDeck}
+            isGeneratingFlashcards={isGeneratingFlashcards}
+            onGenerateFlashcards={handleGenerateFlashcards}
+            onRateCard={handleRateCard}
           />
+          )}
         </div>
 
         {/* AI Sidepanel Right (visible if notebook exists) */}
@@ -153,6 +282,7 @@ export const App: React.FC = () => {
             allDocs={documents}
             geminiApiKeyExists={hasApiKey}
             onOpenSettings={() => setShowSettings(true)}
+            notebookNotes={activeNotebook.notes}
           />
         )}
       </div>

@@ -1,17 +1,50 @@
-import React, { useState, useRef } from 'react';
-import { 
-  FolderPlus, 
-  Folder, 
-  FileText, 
-  Trash2, 
-  Settings, 
-  Upload, 
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  FolderPlus,
+  Folder,
+  FileText,
+  Trash2,
+  Settings,
+  Upload,
   Plus,
   ChevronRight,
-  BookOpen
+  BookOpen,
+  Search,
+  X,
+  Loader2,
+  PenLine
 } from 'lucide-react';
 import { dbService, type Notebook, type DocumentData } from '../services/db';
 import { extractTextFromPdf } from '../services/pdfParser';
+
+interface SearchResult {
+  doc: DocumentData;
+  notebookName: string;
+  snippet: string;
+  matchInName: boolean;
+}
+
+function getSnippet(content: string, query: string): string {
+  const idx = content.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return content.slice(0, 110) + '…';
+  const start = Math.max(0, idx - 35);
+  const end = Math.min(content.length, idx + query.length + 75);
+  return (start > 0 ? '…' : '') + content.slice(start, end) + (end < content.length ? '…' : '');
+}
+
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark style={{ background: 'rgba(139,92,246,0.35)', color: '#fff', borderRadius: '2px', padding: '0 2px' }}>
+        {text.slice(idx, idx + query.length)}
+      </mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
 
 interface SidebarProps {
   activeNotebookId: string | null;
@@ -23,6 +56,8 @@ interface SidebarProps {
   documents: DocumentData[];
   onRefreshDocuments: () => void;
   onOpenSettings: () => void;
+  isScratchpadOpen: boolean;
+  onOpenScratchpad: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -34,7 +69,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onRefreshNotebooks,
   documents,
   onRefreshDocuments,
-  onOpenSettings
+  onOpenSettings,
+  isScratchpadOpen,
+  onOpenScratchpad,
 }) => {
   const [newNotebookName, setNewNotebookName] = useState('');
   const [isAddingNotebook, setIsAddingNotebook] = useState(false);
@@ -44,7 +81,55 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [noteContent, setNoteContent] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Debounced full-text search across all notebooks
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const allDocs = await dbService.getAllDocuments();
+        const q = query.toLowerCase();
+        const results: SearchResult[] = [];
+        for (const doc of allDocs) {
+          const nameMatch = doc.name.toLowerCase().includes(q);
+          const contentMatch = doc.content.toLowerCase().includes(q);
+          if (nameMatch || contentMatch) {
+            const nb = notebooks.find((n) => n.id === doc.notebookId);
+            results.push({
+              doc,
+              notebookName: nb?.name ?? 'Unknown Notebook',
+              snippet: contentMatch ? getSnippet(doc.content, query) : doc.name,
+              matchInName: nameMatch,
+            });
+          }
+          if (results.length >= 20) break;
+        }
+        setSearchResults(results);
+      } catch (err) {
+        console.error('Search failed', err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [searchQuery, notebooks]);
+
+  const handleSearchResultClick = (result: SearchResult) => {
+    setActiveNotebookId(result.doc.notebookId);
+    setActiveDocId(result.doc.id);
+    setSearchQuery('');
+  };
 
   const handleCreateNotebook = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -185,6 +270,76 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
 
+      {/* Search Bar */}
+      <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-color)' }}>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <Search size={14} style={{ position: 'absolute', left: '10px', color: 'var(--text-muted)', pointerEvents: 'none', flexShrink: 0 }} />
+          <input
+            ref={searchInputRef}
+            type="text"
+            placeholder="Search all documents..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ paddingLeft: '32px', paddingRight: searchQuery ? '30px' : '10px', fontSize: '0.82rem', padding: '8px 10px 8px 32px' }}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="btn-icon"
+              style={{ position: 'absolute', right: '2px', width: '26px', height: '26px' }}
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {searchQuery.trim().length >= 2 ? (
+        /* ── Search Results ── */
+        <div style={{ flex: 1, overflowY: 'auto', padding: '6px 8px 16px 8px' }}>
+          {isSearching ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '28px' }}>
+              <Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent-primary)' }} />
+            </div>
+          ) : searchResults.length === 0 ? (
+            <div style={{ padding: '24px 12px', textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              No results for <strong style={{ color: 'var(--text-secondary)' }}>"{searchQuery}"</strong>
+            </div>
+          ) : (
+            <>
+              <div style={{ padding: '6px 12px 2px', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+              </div>
+              {searchResults.map((result) => (
+                <div
+                  key={result.doc.id}
+                  onClick={() => handleSearchResultClick(result)}
+                  style={{ padding: '9px 12px', borderRadius: '8px', cursor: 'pointer', marginBottom: '2px', transition: 'background 0.15s ease' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                    <FileText size={12} style={{ color: result.doc.type === 'pdf' ? '#ef4444' : result.doc.type === 'md' ? '#3b82f6' : 'var(--text-muted)', flexShrink: 0 }} />
+                    <span style={{ fontSize: '0.83rem', fontWeight: 600, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                      <HighlightedText text={result.doc.name} query={searchQuery.trim()} />
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', fontWeight: 600, marginBottom: '3px', paddingLeft: '18px' }}>
+                    {result.notebookName}
+                  </div>
+                  {!result.matchInName && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.45, paddingLeft: '18px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }}>
+                      <HighlightedText text={result.snippet} query={searchQuery.trim()} />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      ) : (
+        <>
+
       {/* Notebook Section */}
       <div style={{ padding: '16px 16px 8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Notebooks</span>
@@ -268,17 +423,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div style={{ padding: '16px 16px 8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Sources</span>
             <div style={{ display: 'flex', gap: '4px' }}>
-              <button 
+              <button
+                onClick={onOpenScratchpad}
+                className="btn-icon"
+                style={{ width: '24px', height: '24px', color: isScratchpadOpen ? 'var(--accent-primary)' : undefined }}
+                title="Open Notebook Notes (Scratchpad)"
+              >
+                <PenLine size={15} />
+              </button>
+              <button
                 onClick={() => setIsCreatingNote(!isCreatingNote)}
-                className="btn-icon" 
+                className="btn-icon"
                 style={{ width: '24px', height: '24px' }}
                 title="Create Note"
               >
                 <Plus size={16} />
               </button>
-              <button 
+              <button
                 onClick={() => fileInputRef.current?.click()}
-                className="btn-icon" 
+                className="btn-icon"
                 style={{ width: '24px', height: '24px' }}
                 title="Upload PDF/Text/MD"
               >
@@ -384,6 +547,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <ChevronRight size={24} style={{ opacity: 0.5 }} />
           <span style={{ fontSize: '0.85rem' }}>Select or create a notebook to begin importing study materials.</span>
         </div>
+      )}
+        </>
       )}
     </aside>
   );

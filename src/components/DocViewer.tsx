@@ -1,12 +1,13 @@
 import React from 'react';
-import { FileText, BrainCircuit, Sparkles, BookOpen, Loader2 } from 'lucide-react';
-import { type DocumentData } from '../services/db';
+import { FileText, BrainCircuit, Sparkles, BookOpen, Loader2, Layers } from 'lucide-react';
+import { type DocumentData, type FlashcardDeck } from '../services/db';
 import { MindMap } from './MindMap';
+import { FlashcardView } from './FlashcardView';
 
 interface DocViewerProps {
   activeDoc: DocumentData | null;
-  activeTab: 'reader' | 'mindmap';
-  setActiveTab: (tab: 'reader' | 'mindmap') => void;
+  activeTab: 'reader' | 'mindmap' | 'flashcards';
+  setActiveTab: (tab: 'reader' | 'mindmap' | 'flashcards') => void;
   onGenerateSummary: () => void;
   onGenerateMindMap: () => void;
   isGeneratingSummary: boolean;
@@ -14,6 +15,10 @@ interface DocViewerProps {
   isGeneratingMindMap: boolean;
   mindMapCode: string | null;
   geminiApiKeyExists: boolean;
+  flashcardDeck: FlashcardDeck | null;
+  isGeneratingFlashcards: boolean;
+  onGenerateFlashcards: () => void;
+  onRateCard: (cardId: string, rating: 'easy' | 'medium' | 'hard') => void;
 }
 
 // Simple custom Markdown parser/renderer to display AI responses and formatted text neatly
@@ -96,7 +101,11 @@ export const DocViewer: React.FC<DocViewerProps> = ({
   summaryText,
   isGeneratingMindMap,
   mindMapCode,
-  geminiApiKeyExists
+  geminiApiKeyExists,
+  flashcardDeck,
+  isGeneratingFlashcards,
+  onGenerateFlashcards,
+  onRateCard,
 }) => {
   if (!activeDoc) {
     return (
@@ -127,44 +136,62 @@ export const DocViewer: React.FC<DocViewerProps> = ({
 
         {/* Tab Controls */}
         <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', padding: '3px', borderRadius: '8px' }}>
-          <button 
-            onClick={() => setActiveTab('reader')}
-            style={{
-              padding: '6px 16px',
-              borderRadius: '6px',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              transition: 'all 0.2s',
-              backgroundColor: activeTab === 'reader' ? 'var(--bg-secondary)' : 'transparent',
-              color: activeTab === 'reader' ? '#fff' : 'var(--text-secondary)'
-            }}
-          >
-            Reader
-          </button>
-          <button 
-            onClick={() => setActiveTab('mindmap')}
-            style={{
-              padding: '6px 16px',
-              borderRadius: '6px',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              transition: 'all 0.2s',
-              backgroundColor: activeTab === 'mindmap' ? 'var(--bg-secondary)' : 'transparent',
-              color: activeTab === 'mindmap' ? '#fff' : 'var(--text-secondary)'
-            }}
-          >
-            Concept Map
-          </button>
+          {(['reader', 'mindmap', 'flashcards'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                padding: '6px 16px',
+                borderRadius: '6px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                transition: 'all 0.2s',
+                backgroundColor: activeTab === tab ? 'var(--bg-secondary)' : 'transparent',
+                color: activeTab === tab ? '#fff' : 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              {tab === 'reader' && 'Reader'}
+              {tab === 'mindmap' && 'Concept Map'}
+              {tab === 'flashcards' && (
+                <>
+                  <Layers size={13} />
+                  Flashcards
+                  {flashcardDeck && flashcardDeck.cards.length > 0 && (
+                    <span style={{
+                      background: 'var(--accent-gradient)',
+                      color: '#fff',
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      padding: '1px 6px',
+                      borderRadius: '10px',
+                      lineHeight: '1.4',
+                    }}>
+                      {flashcardDeck.cards.length}
+                    </span>
+                  )}
+                </>
+              )}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Main Panel Content */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {activeTab === 'reader' ? (
+        {activeTab === 'flashcards' ? (
+          <FlashcardView
+            deck={flashcardDeck}
+            isGenerating={isGeneratingFlashcards}
+            geminiApiKeyExists={geminiApiKeyExists}
+            onGenerate={onGenerateFlashcards}
+            onRateCard={onRateCard}
+          />
+        ) : activeTab === 'reader' ? (
           <div style={{ flex: 1, display: 'flex', height: '100%', overflow: 'hidden' }}>
             {/* Split Screen: Left (Source Text), Right (Summary if generated) */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: summaryText ? '1px solid var(--border-color)' : 'none', overflow: 'hidden' }}>

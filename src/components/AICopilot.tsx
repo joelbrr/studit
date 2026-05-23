@@ -10,6 +10,7 @@ interface AICopilotProps {
   allDocs: DocumentData[];
   geminiApiKeyExists: boolean;
   onOpenSettings: () => void;
+  notebookNotes?: string;
 }
 
 export const AICopilot: React.FC<AICopilotProps> = ({
@@ -17,7 +18,8 @@ export const AICopilot: React.FC<AICopilotProps> = ({
   activeDoc,
   allDocs,
   geminiApiKeyExists,
-  onOpenSettings
+  onOpenSettings,
+  notebookNotes,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -46,15 +48,17 @@ export const AICopilot: React.FC<AICopilotProps> = ({
   }, [activeDoc?.id]);
 
   const getSourcesContext = (): string => {
-    // If active document exists, query only on that text for precise results
+    const notesSection = notebookNotes?.trim()
+      ? `\n\n=====\n\nNotebook Scratchpad Notes (written by the student):\n${notebookNotes}`
+      : '';
+
     if (activeDoc) {
-      return `Document Title: ${activeDoc.name}\nContent:\n${activeDoc.content}`;
+      return `Document Title: ${activeDoc.name}\nContent:\n${activeDoc.content}${notesSection}`;
     }
-    // Fallback to all documents in the notebook
     if (allDocs.length > 0) {
-      return allDocs.map(doc => `Document Title: ${doc.name}\nContent:\n${doc.content}`).join('\n\n=====\n\n');
+      return allDocs.map(doc => `Document Title: ${doc.name}\nContent:\n${doc.content}`).join('\n\n=====\n\n') + notesSection;
     }
-    return '';
+    return notesSection.trim();
   };
 
   const handleSendMessage = async (text: string) => {
@@ -122,7 +126,10 @@ export const AICopilot: React.FC<AICopilotProps> = ({
     ]);
 
     try {
-      const sourcesContext = allDocs.map(doc => `Document Name: ${doc.name}\nContent:\n${doc.content}`).join('\n\n=====\n\n');
+      const notesSection = notebookNotes?.trim()
+        ? `\n\n=====\n\nNotebook Scratchpad Notes (written by the student):\n${notebookNotes}`
+        : '';
+      const sourcesContext = allDocs.map(doc => `Document Name: ${doc.name}\nContent:\n${doc.content}`).join('\n\n=====\n\n') + notesSection;
       const response = await geminiService.generateStudyGuide(notebookName, sourcesContext);
 
       setMessages((prev) => [

@@ -139,6 +139,32 @@ Ensure the styling is highly visual and easy to scan. Use emojis, dividers, and 
     });
   },
 
+  async generateFlashcards(docTitle: string, docContent: string): Promise<{ front: string; back: string }[]> {
+    return withRetry(async (model) => {
+      const prompt = `You are an expert study assistant creating flashcards from an academic document.
+Analyze the document titled "${docTitle}" and generate exactly 15 high-quality flashcards.
+
+Rules:
+- "front": a concise question, term, or prompt (max 15 words)
+- "back": a complete, accurate answer or definition (max 60 words)
+- Cover the most important and exam-relevant content
+- Vary card types: definitions, explanations, cause-effect, comparisons
+
+Respond ONLY with a valid JSON array. No markdown, no code fences, no extra text:
+[{"front":"...","back":"..."},...]
+
+Document:
+${docContent.slice(0, 14000)}`;
+
+      const result = await model.generateContent(prompt);
+      let text = result.response.text().trim();
+      text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      const parsed = JSON.parse(text);
+      if (!Array.isArray(parsed)) throw new Error('Expected a JSON array from Gemini');
+      return parsed as { front: string; back: string }[];
+    });
+  },
+
   async generateMindMap(docTitle: string, docContent: string): Promise<string> {
     return withRetry(async (model) => {
       const prompt = `You are a mind-mapping assistant that visualizes connections between ideas.
