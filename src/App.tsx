@@ -34,7 +34,7 @@ export const App: React.FC = () => {
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'reader' | 'mindmap' | 'flashcards'>('reader');
+  const [activeTab, setActiveTab] = useState<'reader' | 'mindmap' | 'flashcards' | 'reference'>('reader');
   const [showSettings, setShowSettings] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
 
@@ -42,6 +42,7 @@ export const App: React.FC = () => {
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isGeneratingMindMap, setIsGeneratingMindMap] = useState(false);
   const [isGeneratingFlashcards, setIsGeneratingFlashcards] = useState(false);
+  const [isGeneratingReference, setIsGeneratingReference] = useState(false);
 
   // Flashcard deck for the active document
   const [activeFlashcardDeck, setActiveFlashcardDeck] = useState<FlashcardDeck | null>(null);
@@ -245,6 +246,23 @@ export const App: React.FC = () => {
     await dbService.saveDeck(updatedDeck);
   };
 
+  // Reference sheet extraction
+  const handleGenerateReference = async () => {
+    if (!activeDoc) return;
+    setIsGeneratingReference(true);
+    try {
+      const data = await geminiService.extractReferenceSheet(activeDoc.name, activeDoc.content);
+      const updatedDoc: DocumentData = { ...activeDoc, referenceSheet: data };
+      await dbService.saveDocument(updatedDoc);
+      await loadDocuments();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to extract reference sheet: ' + (err as Error).message);
+    } finally {
+      setIsGeneratingReference(false);
+    }
+  };
+
   // Mind map generation action
   const handleGenerateMindMap = async () => {
     if (!activeDoc) return;
@@ -322,6 +340,9 @@ export const App: React.FC = () => {
             isGeneratingFlashcards={isGeneratingFlashcards}
             onGenerateFlashcards={handleGenerateFlashcards}
             onRateCard={handleRateCard}
+            referenceSheet={activeDoc?.referenceSheet ?? null}
+            isGeneratingReference={isGeneratingReference}
+            onGenerateReference={handleGenerateReference}
           />
           )}
         </div>

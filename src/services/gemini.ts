@@ -165,6 +165,40 @@ ${docContent.slice(0, 14000)}`;
     });
   },
 
+  async extractReferenceSheet(docTitle: string, docContent: string): Promise<{ terms: { term: string; definition: string }[]; formulas: { label: string; latex: string; description: string }[] }> {
+    return withRetry(async (model) => {
+      const prompt = `You are an academic document analyzer. Extract all key terms, definitions, equations, and formulas from the document titled "${docTitle}".
+
+Respond ONLY with a valid JSON object — no markdown fences, no extra text:
+{
+  "terms": [
+    { "term": "...", "definition": "..." }
+  ],
+  "formulas": [
+    { "label": "...", "latex": "...", "description": "..." }
+  ]
+}
+
+Rules:
+- "terms": Extract 10–25 of the most important defined terms, concepts, and vocabulary. Each "definition" must be concise (1–2 sentences max).
+- "formulas": Extract ALL mathematical equations or expressions. In "latex", provide the raw LaTeX notation WITHOUT surrounding $ or $$ delimiters (e.g. "F = ma", "\\\\frac{d}{dx}f(x)", "E = mc^2"). "label" is the formula name. "description" explains its meaning or when to use it (1 sentence).
+- If there are no formulas, return "formulas": [].
+- If there are no defined terms, return "terms": [].
+
+Document content:
+${docContent.slice(0, 16000)}`;
+
+      const result = await model.generateContent(prompt);
+      let text = result.response.text().trim();
+      text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      const parsed = JSON.parse(text);
+      if (!Array.isArray(parsed.terms) || !Array.isArray(parsed.formulas)) {
+        throw new Error('Unexpected response format from Gemini');
+      }
+      return parsed as { terms: { term: string; definition: string }[]; formulas: { label: string; latex: string; description: string }[] };
+    });
+  },
+
   async generateStudyPlan(
     notebookName: string,
     examDate: number,

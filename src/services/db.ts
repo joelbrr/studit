@@ -6,6 +6,11 @@ export interface Notebook {
   examDate?: number;
 }
 
+export interface ReferenceSheetData {
+  terms: { term: string; definition: string }[];
+  formulas: { label: string; latex: string; description: string }[];
+}
+
 export interface DocumentData {
   id: string;
   notebookId: string;
@@ -16,6 +21,7 @@ export interface DocumentData {
   summary?: string;
   mindmap?: string;
   tags?: string[];
+  referenceSheet?: ReferenceSheetData;
 }
 
 // ─── Flashcard types ─────────────────────────────────────────────────────────

@@ -1,13 +1,14 @@
 import React from 'react';
-import { FileText, BrainCircuit, Sparkles, BookOpen, Loader2, Layers } from 'lucide-react';
-import { type DocumentData, type FlashcardDeck } from '../services/db';
+import { FileText, BrainCircuit, Sparkles, BookOpen, Loader2, Layers, BookMarked } from 'lucide-react';
+import { type DocumentData, type FlashcardDeck, type ReferenceSheetData } from '../services/db';
 import { MindMap } from './MindMap';
 import { FlashcardView } from './FlashcardView';
+import { ReferenceSheet } from './ReferenceSheet';
 
 interface DocViewerProps {
   activeDoc: DocumentData | null;
-  activeTab: 'reader' | 'mindmap' | 'flashcards';
-  setActiveTab: (tab: 'reader' | 'mindmap' | 'flashcards') => void;
+  activeTab: 'reader' | 'mindmap' | 'flashcards' | 'reference';
+  setActiveTab: (tab: 'reader' | 'mindmap' | 'flashcards' | 'reference') => void;
   onGenerateSummary: () => void;
   onGenerateMindMap: () => void;
   isGeneratingSummary: boolean;
@@ -19,6 +20,9 @@ interface DocViewerProps {
   isGeneratingFlashcards: boolean;
   onGenerateFlashcards: () => void;
   onRateCard: (cardId: string, rating: 'easy' | 'medium' | 'hard') => void;
+  referenceSheet: ReferenceSheetData | null;
+  isGeneratingReference: boolean;
+  onGenerateReference: () => void;
 }
 
 // Simple custom Markdown parser/renderer to display AI responses and formatted text neatly
@@ -106,6 +110,9 @@ export const DocViewer: React.FC<DocViewerProps> = ({
   isGeneratingFlashcards,
   onGenerateFlashcards,
   onRateCard,
+  referenceSheet,
+  isGeneratingReference,
+  onGenerateReference,
 }) => {
   if (!activeDoc) {
     return (
@@ -136,12 +143,12 @@ export const DocViewer: React.FC<DocViewerProps> = ({
 
         {/* Tab Controls */}
         <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', padding: '3px', borderRadius: '8px' }}>
-          {(['reader', 'mindmap', 'flashcards'] as const).map((tab) => (
+          {(['reader', 'mindmap', 'flashcards', 'reference'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               style={{
-                padding: '6px 16px',
+                padding: '6px 14px',
                 borderRadius: '6px',
                 border: 'none',
                 cursor: 'pointer',
@@ -162,16 +169,19 @@ export const DocViewer: React.FC<DocViewerProps> = ({
                   <Layers size={13} />
                   Flashcards
                   {flashcardDeck && flashcardDeck.cards.length > 0 && (
-                    <span style={{
-                      background: 'var(--accent-gradient)',
-                      color: '#fff',
-                      fontSize: '0.68rem',
-                      fontWeight: 700,
-                      padding: '1px 6px',
-                      borderRadius: '10px',
-                      lineHeight: '1.4',
-                    }}>
+                    <span style={{ background: 'var(--accent-gradient)', color: '#fff', fontSize: '0.68rem', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', lineHeight: '1.4' }}>
                       {flashcardDeck.cards.length}
+                    </span>
+                  )}
+                </>
+              )}
+              {tab === 'reference' && (
+                <>
+                  <BookMarked size={13} />
+                  Reference
+                  {referenceSheet && (referenceSheet.terms.length + referenceSheet.formulas.length) > 0 && (
+                    <span style={{ background: 'rgba(139,92,246,0.25)', color: '#a78bfa', fontSize: '0.68rem', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', lineHeight: '1.4' }}>
+                      {referenceSheet.terms.length + referenceSheet.formulas.length}
                     </span>
                   )}
                 </>
@@ -183,7 +193,15 @@ export const DocViewer: React.FC<DocViewerProps> = ({
 
       {/* Main Panel Content */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {activeTab === 'flashcards' ? (
+        {activeTab === 'reference' ? (
+          <ReferenceSheet
+            referenceSheet={referenceSheet}
+            isGenerating={isGeneratingReference}
+            geminiApiKeyExists={geminiApiKeyExists}
+            docName={activeDoc.name}
+            onGenerate={onGenerateReference}
+          />
+        ) : activeTab === 'flashcards' ? (
           <FlashcardView
             deck={flashcardDeck}
             isGenerating={isGeneratingFlashcards}
