@@ -3,6 +3,7 @@ export interface Notebook {
   name: string;
   createdAt: number;
   notes?: string;
+  examDate?: number;
 }
 
 export interface DocumentData {
@@ -14,6 +15,7 @@ export interface DocumentData {
   createdAt: number;
   summary?: string;
   mindmap?: string;
+  tags?: string[];
 }
 
 // ─── Flashcard types ─────────────────────────────────────────────────────────

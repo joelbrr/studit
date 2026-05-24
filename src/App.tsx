@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar';
 import { DocViewer } from './components/DocViewer';
 import { AICopilot } from './components/AICopilot';
 import { NotebookScratchpad } from './components/NotebookScratchpad';
+import { StudyPlanner } from './components/StudyPlanner';
 import { dbService, type Notebook, type DocumentData, type Flashcard, type FlashcardDeck } from './services/db';
 import { geminiService } from './services/gemini';
 import { X, Key } from 'lucide-react';
@@ -48,6 +49,11 @@ export const App: React.FC = () => {
   // Notebook scratchpad
   const [showScratchpad, setShowScratchpad] = useState(false);
 
+  // Study planner
+  const [showStudyPlanner, setShowStudyPlanner] = useState(false);
+  const [studyPlan, setStudyPlan] = useState<string | null>(null);
+  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
+
   // Load notebooks on mount
   useEffect(() => {
     loadNotebooks();
@@ -64,10 +70,18 @@ export const App: React.FC = () => {
     loadDocuments();
   }, [activeNotebookId]);
 
-  // Auto-dismiss scratchpad when a document is selected
+  // Auto-dismiss scratchpad/planner when a document is selected
   useEffect(() => {
-    if (activeDocId) setShowScratchpad(false);
+    if (activeDocId) {
+      setShowScratchpad(false);
+      setShowStudyPlanner(false);
+    }
   }, [activeDocId]);
+
+  // Reset study plan when switching notebooks
+  useEffect(() => {
+    setStudyPlan(null);
+  }, [activeNotebookId]);
 
   // Load flashcard deck when active document changes
   useEffect(() => {
@@ -152,6 +166,30 @@ export const App: React.FC = () => {
     await loadDocuments();
     setActiveDocId(newDoc.id);
     setShowScratchpad(false);
+  };
+
+  // Exam date setter
+  const handleSetExamDate = async (date: number | null) => {
+    if (!activeNotebook) return;
+    const updated: Notebook = { ...activeNotebook, examDate: date ?? undefined };
+    setNotebooks((prev) => prev.map((nb) => nb.id === updated.id ? updated : nb));
+    await dbService.saveNotebook(updated);
+  };
+
+  // Study plan generation
+  const handleGenerateStudyPlan = async () => {
+    if (!activeNotebook?.examDate || documents.length === 0) return;
+    setIsGeneratingPlan(true);
+    try {
+      const docs = documents.map((d) => ({ name: d.name, wordCount: d.content.split(/\s+/).length }));
+      const plan = await geminiService.generateStudyPlan(activeNotebook.name, activeNotebook.examDate, docs);
+      setStudyPlan(plan);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to generate study plan: ' + (err as Error).message);
+    } finally {
+      setIsGeneratingPlan(false);
+    }
   };
 
   // Notebook scratchpad save
@@ -243,12 +281,26 @@ export const App: React.FC = () => {
           onRefreshDocuments={loadDocuments}
           onOpenSettings={() => setShowSettings(true)}
           isScratchpadOpen={showScratchpad}
-          onOpenScratchpad={() => { setShowScratchpad(true); setActiveDocId(null); }}
+          onOpenScratchpad={() => { setShowScratchpad(true); setShowStudyPlanner(false); setActiveDocId(null); }}
+          isStudyPlannerOpen={showStudyPlanner}
+          onOpenStudyPlanner={() => { setShowStudyPlanner(true); setShowScratchpad(false); setActiveDocId(null); }}
         />
 
         {/* Workspace Central Canvas */}
         <div className="workspace-container">
-          {showScratchpad && activeNotebook ? (
+          {showStudyPlanner && activeNotebook ? (
+            <StudyPlanner
+              key={activeNotebook.id}
+              notebook={activeNotebook}
+              documents={documents}
+              geminiApiKeyExists={hasApiKey}
+              onSetExamDate={handleSetExamDate}
+              onGeneratePlan={handleGenerateStudyPlan}
+              isGeneratingPlan={isGeneratingPlan}
+              studyPlan={studyPlan}
+              onOpenSettings={() => setShowSettings(true)}
+            />
+          ) : showScratchpad && activeNotebook ? (
             <NotebookScratchpad
               notebook={activeNotebook}
               onSave={handleSaveNotebookNotes}

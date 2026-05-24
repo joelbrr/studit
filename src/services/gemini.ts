@@ -165,6 +165,54 @@ ${docContent.slice(0, 14000)}`;
     });
   },
 
+  async generateStudyPlan(
+    notebookName: string,
+    examDate: number,
+    docs: Array<{ name: string; wordCount: number }>
+  ): Promise<string> {
+    return withRetry(async (model) => {
+      const daysLeft = Math.max(1, Math.ceil((examDate - Date.now()) / (1000 * 60 * 60 * 24)));
+      const examDateStr = new Date(examDate).toLocaleDateString('en-GB', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+      });
+      const docList = docs
+        .map((d) => `- "${d.name}" (~${Math.max(1, Math.ceil(d.wordCount / 200))} min read)`)
+        .join('\n');
+
+      const prompt = `You are a professional study coach creating a personalised exam preparation plan.
+
+Notebook: "${notebookName}"
+Exam Date: ${examDateStr} (${daysLeft} day${daysLeft !== 1 ? 's' : ''} from today)
+
+Study materials to cover:
+${docList}
+
+Create a realistic and motivating ${daysLeft}-day study plan. Structure your response as:
+
+## 📅 ${daysLeft}-Day Study Plan for ${notebookName}
+
+For each day, write **Day N — [short date]** as a heading with:
+- Focus topics from the document list above
+- Specific tasks (reading, summarising, self-testing, etc.)
+- Estimated time commitment
+
+Then add these sections:
+### ⚡ Quick Wins
+(3-5 things to prioritise first regardless of timeline)
+
+### 📋 Final Day Checklist
+(what to do the day before the exam)
+
+### 💡 Study Tips
+(3 tailored tips based on these specific materials)
+
+Use emojis, clear markdown, and an encouraging tone!`;
+
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    });
+  },
+
   async generateMindMap(docTitle: string, docContent: string): Promise<string> {
     return withRetry(async (model) => {
       const prompt = `You are a mind-mapping assistant that visualizes connections between ideas.
