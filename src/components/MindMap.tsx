@@ -66,27 +66,45 @@ export const MindMap: React.FC<MindMapProps> = ({ code, onRegenerate, isGenerati
   /** Auto-fit the SVG inside the container */
   const fitToContainer = useCallback(() => {
     if (!containerRef.current || !innerRef.current) return;
-    const svg = innerRef.current.querySelector('svg');
-    if (!svg) return;
+    const svgEl = innerRef.current.querySelector('svg');
+    if (!svgEl) return;
 
     const containerRect = containerRef.current.getBoundingClientRect();
-    const svgRect = svg.getBoundingClientRect();
-    if (!svgRect.width || !svgRect.height) return;
 
-    // Use the natural SVG size before any transforms
-    const svgW = svg.scrollWidth || svgRect.width;
-    const svgH = svg.scrollHeight || svgRect.height;
+    // Read natural dimensions from SVG attributes — most reliable source,
+    // unaffected by CSS max-width or current transform.
+    let svgW = parseFloat(svgEl.getAttribute('width') || '0');
+    let svgH = parseFloat(svgEl.getAttribute('height') || '0');
 
-    const padding = 80;
+    // Fall back to viewBox if explicit attributes are missing
+    if (!svgW || !svgH) {
+      const vb = svgEl.getAttribute('viewBox')?.split(/[\s,]+/);
+      if (vb && vb.length >= 4) {
+        svgW = parseFloat(vb[2]);
+        svgH = parseFloat(vb[3]);
+      }
+    }
+
+    // Final fallback to bounding rect (with transform reset to 1:1)
+    if (!svgW || !svgH) {
+      const rect = svgEl.getBoundingClientRect();
+      svgW = rect.width;
+      svgH = rect.height;
+    }
+
+    if (!svgW || !svgH) return;
+
+    const padding = 60;
     const scaleX = (containerRect.width - padding) / svgW;
     const scaleY = (containerRect.height - padding) / svgH;
-    const fitScale = Math.min(scaleX, scaleY, 1); // don't scale up beyond 1x on fit
-
-    const centeredX = (containerRect.width - svgW * fitScale) / 2;
-    const centeredY = (containerRect.height - svgH * fitScale) / 2;
+    // Cap at 1 so small maps don't get blown up; always scale down when needed
+    const fitScale = Math.min(scaleX, scaleY, 1);
 
     scaleRef.current = fitScale;
-    positionRef.current = { x: centeredX, y: centeredY };
+    positionRef.current = {
+      x: (containerRect.width - svgW * fitScale) / 2,
+      y: (containerRect.height - svgH * fitScale) / 2,
+    };
     applyTransform(true);
   }, [applyTransform]);
 
@@ -448,6 +466,18 @@ export const MindMap: React.FC<MindMapProps> = ({ code, onRegenerate, isGenerati
           opacity: 0.85;
         }
         .marker { fill: #6366f1 !important; stroke: none !important; }
+        .edgeLabel { background: transparent !important; }
+        .edgeLabel .label foreignObject { overflow: visible !important; }
+        .edgeLabel .label div {
+          background: rgba(10, 12, 24, 0.82) !important;
+          color: #a78bfa !important;
+          font-size: 0.68rem !important;
+          font-weight: 600 !important;
+          padding: 2px 6px !important;
+          border-radius: 4px !important;
+          border: 1px solid rgba(139, 92, 246, 0.25) !important;
+          white-space: nowrap !important;
+        }
       `}</style>
     </div>
   );

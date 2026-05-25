@@ -249,22 +249,27 @@ Use emojis, clear markdown, and an encouraging tone!`;
 
   async generateMindMap(docTitle: string, docContent: string): Promise<string> {
     return withRetry(async (model) => {
-      const prompt = `You are a mind-mapping assistant that visualizes connections between ideas.
-Analyze the document titled "${docTitle}" and generate a hierarchical, conceptual mind map using Mermaid.js syntax.
+      const prompt = `You are a concept-map assistant. Your job is to distill a document into a clear, readable concept map that reveals meaningful relationships between ideas.
 
-RULES for the Mermaid diagram:
-1. Use 'graph TD' (Top-Down) or 'graph LR' (Left-Right) layout.
-2. Structure the map logically: Main Topic at the root, branches for subtopics, and sub-branches for key definitions/concepts.
-3. Node IDs must be simple alphanumeric strings (e.g. A, B1, B2, C1).
-4. Node text MUST be wrapped in double quotes inside brackets to avoid syntax errors with special characters. Example: A["Main Topic Name"] --> B["Subtopic: Definitions"]
-5. Use styling in the Mermaid code if you want, but keep the structure robust and compliant.
-6. The entire response must consist of ONLY a markdown code block containing the mermaid code, like this:
-\`\`\`mermaid
-graph TD
-    A["Main Concept"] --> B["Key Point"]
-\`\`\`
+Analyze the document titled "${docTitle}" and generate a Mermaid.js concept map.
 
-Here is the document content to map:
+OBJECTIVE: Identify the 5–7 most important concepts. Show how they relate to each other — causal, compositional, sequential, or contrasting links. Prioritise insight and clarity over completeness. A user should be able to grasp the document's core structure at a glance.
+
+STRICT RULES:
+1. Layout: use "graph LR" (left-right) only. Never use TD or other layouts.
+2. Node count: maximum 25 nodes total.
+3. Depth: maximum 5 levels from the root node.
+4. Every edge MUST carry a short relationship label using this exact syntax:
+   A["Concept X"] -->|"causes"| B["Concept Y"]
+   Choose meaningful verbs or short phrases: "causes", "is part of", "leads to", "contrasts with", "enables", "requires", "produces", "defines", "supports", "precedes", etc.
+5. Node text: 3–6 words maximum. No colons, quotes, or special characters inside node text.
+6. Node IDs: simple alphanumeric only (A, B1, C2, etc.).
+7. Do NOT exhaustively list every detail from the document — only include concepts that have a real, meaningful relationship to at least one other concept.
+8. Do NOT add style, classDef, or linkStyle blocks.
+
+OUTPUT FORMAT: Respond with ONLY a single markdown code block containing the Mermaid code. No explanations, no commentary.
+
+Document content:
 ${docContent}`;
 
       const result = await model.generateContent(prompt);
