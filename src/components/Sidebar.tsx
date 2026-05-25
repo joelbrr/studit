@@ -16,7 +16,8 @@ import {
   Hash,
   ChevronLeft,
   CalendarDays,
-  GraduationCap
+  GraduationCap,
+  CheckCircle2
 } from 'lucide-react';
 import { dbService, type Notebook, type DocumentData } from '../services/db';
 import { extractTextFromPdf } from '../services/pdfParser';
@@ -692,8 +693,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
-                      <FileText size={14} style={{ color: doc.type === 'pdf' ? '#ef4444' : doc.type === 'md' ? '#3b82f6' : 'var(--text-muted)', flexShrink: 0 }} />
+                      {doc.reviewed
+                        ? <CheckCircle2 size={14} style={{ color: '#10b981', flexShrink: 0 }} />
+                        : <FileText size={14} style={{ color: doc.type === 'pdf' ? '#ef4444' : doc.type === 'md' ? '#3b82f6' : 'var(--text-muted)', flexShrink: 0 }} />
+                      }
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{doc.name}</span>
+                      {doc.reviewed && (
+                        <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '8px', padding: '1px 5px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                          Reviewed
+                        </span>
+                      )}
                     </div>
                     <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
                       <button
@@ -714,6 +723,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </button>
                     </div>
                   </div>
+
+                  {/* Reading progress bar */}
+                  {(doc.scrollProgress ?? 0) > 0 && (
+                    <div style={{ margin: '0 12px 3px 12px', height: '2px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px' }}>
+                      <div style={{ height: '100%', width: `${doc.scrollProgress}%`, background: doc.reviewed ? '#10b981' : 'var(--accent-primary)', borderRadius: '2px', transition: 'width 0.4s ease' }} />
+                    </div>
+                  )}
 
                   {/* Tags display (collapsed, not editing) */}
                   {(doc.tags?.length ?? 0) > 0 && editingTagsDocId !== doc.id && (

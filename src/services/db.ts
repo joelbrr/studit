@@ -22,6 +22,8 @@ export interface DocumentData {
   mindmap?: string;
   tags?: string[];
   referenceSheet?: ReferenceSheetData;
+  scrollProgress?: number; // 0-100, percent of document scrolled
+  reviewed?: boolean;      // true once summary or mind map has been generated
 }
 
 // ─── Flashcard types ─────────────────────────────────────────────────────────

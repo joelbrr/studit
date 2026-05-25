@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, BookOpen, Loader2 } from 'lucide-react';
+import { Send, Sparkles, BookOpen, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { type ChatMessage, geminiService } from '../services/gemini';
 import { MarkdownRenderer } from './DocViewer';
 import { type DocumentData } from '../services/db';
@@ -11,6 +11,8 @@ interface AICopilotProps {
   geminiApiKeyExists: boolean;
   onOpenSettings: () => void;
   notebookNotes?: string;
+  collapsed: boolean;
+  onToggle: () => void;
 }
 
 export const AICopilot: React.FC<AICopilotProps> = ({
@@ -20,6 +22,8 @@ export const AICopilot: React.FC<AICopilotProps> = ({
   geminiApiKeyExists,
   onOpenSettings,
   notebookNotes,
+  collapsed,
+  onToggle,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -161,29 +165,39 @@ export const AICopilot: React.FC<AICopilotProps> = ({
   ];
 
   return (
-    <div className="glass" style={{ width: 'var(--ai-panel-width)', height: '100%', display: 'flex', flexDirection: 'column', borderLeft: '1px solid var(--border-color)', zIndex: 10 }}>
+    <div className="glass" style={{ width: collapsed ? '48px' : 'var(--ai-panel-width)', height: '100%', display: 'flex', flexDirection: 'column', borderLeft: '1px solid var(--border-color)', zIndex: 10, transition: 'width 0.25s ease', overflow: 'hidden', flexShrink: 0 }}>
+      {/* Collapsed strip */}
+      {collapsed ? (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '14px', gap: '12px' }}>
+          <button onClick={onToggle} className="btn-icon" title="Expand AI Copilot" style={{ width: '32px', height: '32px' }}>
+            <ChevronLeft size={16} />
+          </button>
+          <Sparkles size={16} style={{ color: 'var(--accent-primary)', opacity: 0.7 }} />
+        </div>
+      ) : (
+      <>
       {/* Copilot Header */}
-      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,0.01)' }}>
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,0.01)', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Sparkles size={18} style={{ color: 'var(--accent-primary)' }} />
           <h2 style={{ fontSize: '1rem', fontWeight: 700 }}>AI Study Copilot</h2>
         </div>
-        
-        {allDocs.length > 0 && (
-          <button 
-            onClick={handleGenerateStudyGuide} 
-            disabled={isGeneratingGuide || !geminiApiKeyExists}
-            className="btn-secondary" 
-            style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'flex', gap: '6px', alignItems: 'center' }}
-          >
-            {isGeneratingGuide ? (
-              <Loader2 className="animate-spin" size={12} />
-            ) : (
-              <BookOpen size={12} />
-            )}
-            Study Guide
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {allDocs.length > 0 && (
+            <button
+              onClick={handleGenerateStudyGuide}
+              disabled={isGeneratingGuide || !geminiApiKeyExists}
+              className="btn-secondary"
+              style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'flex', gap: '6px', alignItems: 'center' }}
+            >
+              {isGeneratingGuide ? <Loader2 className="animate-spin" size={12} /> : <BookOpen size={12} />}
+              Study Guide
+            </button>
+          )}
+          <button onClick={onToggle} className="btn-icon" title="Collapse AI Copilot" style={{ width: '28px', height: '28px', flexShrink: 0 }}>
+            <ChevronRight size={15} />
           </button>
-        )}
+        </div>
       </div>
 
       {/* Messages Scroll Area */}
@@ -293,6 +307,8 @@ export const AICopilot: React.FC<AICopilotProps> = ({
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 };

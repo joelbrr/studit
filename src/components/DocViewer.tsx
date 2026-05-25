@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { FileText, BrainCircuit, Sparkles, BookOpen, Loader2, Layers, BookMarked } from 'lucide-react';
 import { type DocumentData, type FlashcardDeck, type ReferenceSheetData } from '../services/db';
 import { MindMap } from './MindMap';
@@ -23,6 +23,8 @@ interface DocViewerProps {
   referenceSheet: ReferenceSheetData | null;
   isGeneratingReference: boolean;
   onGenerateReference: () => void;
+  scrollProgress?: number;
+  onScrollProgress: (progress: number) => void;
 }
 
 // Simple custom Markdown parser/renderer to display AI responses and formatted text neatly
@@ -113,7 +115,18 @@ export const DocViewer: React.FC<DocViewerProps> = ({
   referenceSheet,
   isGeneratingReference,
   onGenerateReference,
+  scrollProgress,
+  onScrollProgress,
 }) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const max = el.scrollHeight - el.clientHeight;
+    if (max <= 0) return;
+    onScrollProgress(Math.round((el.scrollTop / max) * 100));
+  };
   if (!activeDoc) {
     return (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '40px', textAlign: 'center', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
@@ -139,6 +152,11 @@ export const DocViewer: React.FC<DocViewerProps> = ({
           <span style={{ fontWeight: 600, fontSize: '0.95rem', maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#fff' }}>
             {activeDoc.name}
           </span>
+          {activeTab === 'reader' && (scrollProgress ?? 0) > 0 && (
+            <span style={{ fontSize: '0.72rem', fontWeight: 600, color: scrollProgress === 100 ? '#10b981' : 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '2px 7px', flexShrink: 0 }}>
+              {scrollProgress === 100 ? '✓ 100% read' : `${scrollProgress}% read`}
+            </span>
+          )}
         </div>
 
         {/* Tab Controls */}
@@ -191,6 +209,13 @@ export const DocViewer: React.FC<DocViewerProps> = ({
         </div>
       </div>
 
+      {/* Reading progress bar — spans full width below header */}
+      <div style={{ height: '3px', background: 'rgba(255,255,255,0.05)', flexShrink: 0 }}>
+        {activeTab === 'reader' && (scrollProgress ?? 0) > 0 && (
+          <div style={{ height: '100%', width: `${scrollProgress}%`, background: scrollProgress === 100 ? '#10b981' : 'var(--accent-gradient, linear-gradient(90deg,#8b5cf6,#6366f1))', borderRadius: '0 2px 2px 0', transition: 'width 0.4s ease' }} />
+        )}
+      </div>
+
       {/* Main Panel Content */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {activeTab === 'reference' ? (
@@ -238,7 +263,7 @@ export const DocViewer: React.FC<DocViewerProps> = ({
               </div>
 
               {/* Scrollable Document Text */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '30px 40px', lineHeight: '1.8', fontSize: '0.98rem', color: 'var(--text-primary)' }}>
+              <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, overflowY: 'auto', padding: '30px 40px', lineHeight: '1.8', fontSize: '0.98rem', color: 'var(--text-primary)' }}>
                 <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', wordBreak: 'break-word' }}>
                   {activeDoc.content}
                 </pre>

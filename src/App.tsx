@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DocViewer } from './components/DocViewer';
 import { AICopilot } from './components/AICopilot';
@@ -49,11 +49,14 @@ export const App: React.FC = () => {
 
   // Notebook scratchpad
   const [showScratchpad, setShowScratchpad] = useState(false);
+  const [copilotCollapsed, setCopilotCollapsed] = useState(false);
 
   // Study planner
   const [showStudyPlanner, setShowStudyPlanner] = useState(false);
   const [studyPlan, setStudyPlan] = useState<string | null>(null);
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
+
+  const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load notebooks on mount
   useEffect(() => {
@@ -130,18 +133,24 @@ export const App: React.FC = () => {
   const activeNotebook = notebooks.find((nb) => nb.id === activeNotebookId) || null;
   const hasApiKey = !!apiKeyInput.trim();
 
+  const handleScrollProgress = (progress: number) => {
+    if (!activeDoc) return;
+    const updatedDoc: DocumentData = { ...activeDoc, scrollProgress: progress };
+    setDocuments((prev) => prev.map((d) => d.id === activeDoc.id ? updatedDoc : d));
+    if (scrollSaveTimer.current) clearTimeout(scrollSaveTimer.current);
+    scrollSaveTimer.current = setTimeout(() => {
+      dbService.saveDocument(updatedDoc).catch(console.error);
+    }, 1500);
+  };
+
   // Summary generation action
   const handleGenerateSummary = async () => {
     if (!activeDoc) return;
     setIsGeneratingSummary(true);
     try {
       const summary = await geminiService.generateSummary(activeDoc.name, activeDoc.content);
-      const updatedDoc: DocumentData = {
-        ...activeDoc,
-        summary
-      };
+      const updatedDoc: DocumentData = { ...activeDoc, summary, reviewed: true };
       await dbService.saveDocument(updatedDoc);
-      // Refresh documents local state
       await loadDocuments();
     } catch (err) {
       console.error(err);
@@ -269,12 +278,8 @@ export const App: React.FC = () => {
     setIsGeneratingMindMap(true);
     try {
       const mindmap = await geminiService.generateMindMap(activeDoc.name, activeDoc.content);
-      const updatedDoc: DocumentData = {
-        ...activeDoc,
-        mindmap
-      };
+      const updatedDoc: DocumentData = { ...activeDoc, mindmap, reviewed: true };
       await dbService.saveDocument(updatedDoc);
-      // Refresh documents local state
       await loadDocuments();
     } catch (err) {
       console.error(err);
@@ -343,6 +348,8 @@ export const App: React.FC = () => {
             referenceSheet={activeDoc?.referenceSheet ?? null}
             isGeneratingReference={isGeneratingReference}
             onGenerateReference={handleGenerateReference}
+            scrollProgress={activeDoc?.scrollProgress}
+            onScrollProgress={handleScrollProgress}
           />
           )}
         </div>
@@ -356,6 +363,8 @@ export const App: React.FC = () => {
             geminiApiKeyExists={hasApiKey}
             onOpenSettings={() => setShowSettings(true)}
             notebookNotes={activeNotebook.notes}
+            collapsed={copilotCollapsed}
+            onToggle={() => setCopilotCollapsed((v) => !v)}
           />
         )}
       </div>
