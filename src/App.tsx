@@ -57,6 +57,9 @@ export const App: React.FC = () => {
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
 
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [externalCopilotMessage, setExternalCopilotMessage] = useState<{ text: string; id: number } | null>(null);
+  const [selectionToast, setSelectionToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load notebooks on mount
   useEffect(() => {
@@ -132,6 +135,46 @@ export const App: React.FC = () => {
   const activeDoc = documents.find((doc) => doc.id === activeDocId) || null;
   const activeNotebook = notebooks.find((nb) => nb.id === activeNotebookId) || null;
   const hasApiKey = !!apiKeyInput.trim();
+
+  const handleExplainSelection = (action: 'explain' | 'simplify' | 'translate', text: string) => {
+    const snippet = text.length > 300 ? text.slice(0, 300) + '…' : text;
+    const prompts: Record<typeof action, string> = {
+      explain:   `Please explain this excerpt:\n\n> "${snippet}"`,
+      simplify:  `Please simplify this excerpt into plain, easy-to-understand language:\n\n> "${snippet}"`,
+      translate: `Please translate this excerpt to English (if it's already in English, clarify and simplify it):\n\n> "${snippet}"`,
+    };
+    setCopilotCollapsed(false);
+    setExternalCopilotMessage({ text: prompts[action], id: Date.now() });
+  };
+
+  const handleAddSelectionToFlashcard = async (text: string) => {
+    if (!activeDoc || !activeNotebookId) return;
+    const front = text.length > 300 ? text.slice(0, 300) + '…' : text;
+    const now = Date.now();
+    const newCard: Flashcard = {
+      id: `${activeDoc.id}_sel_${now}`,
+      front,
+      back: '',
+      interval: 1,
+      easeFactor: 2.5,
+      nextReview: now,
+      reviewCount: 0,
+    };
+    const base = activeFlashcardDeck ?? {
+      id: activeDoc.id,
+      docId: activeDoc.id,
+      notebookId: activeNotebookId,
+      cards: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    const updatedDeck: FlashcardDeck = { ...base, cards: [...base.cards, newCard], updatedAt: now };
+    await dbService.saveDeck(updatedDeck);
+    setActiveFlashcardDeck(updatedDeck);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setSelectionToast('✓ Added to flashcards');
+    toastTimer.current = setTimeout(() => setSelectionToast(null), 2500);
+  };
 
   const handleScrollProgress = (progress: number) => {
     if (!activeDoc) return;
@@ -350,6 +393,9 @@ export const App: React.FC = () => {
             onGenerateReference={handleGenerateReference}
             scrollProgress={activeDoc?.scrollProgress}
             onScrollProgress={handleScrollProgress}
+            onExplainSelection={handleExplainSelection}
+            onAddSelectionToFlashcard={handleAddSelectionToFlashcard}
+            selectionToast={selectionToast}
           />
           )}
         </div>
@@ -365,6 +411,7 @@ export const App: React.FC = () => {
             notebookNotes={activeNotebook.notes}
             collapsed={copilotCollapsed}
             onToggle={() => setCopilotCollapsed((v) => !v)}
+            externalMessage={externalCopilotMessage}
           />
         )}
       </div>

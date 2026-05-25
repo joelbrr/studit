@@ -13,6 +13,7 @@ interface AICopilotProps {
   notebookNotes?: string;
   collapsed: boolean;
   onToggle: () => void;
+  externalMessage?: { text: string; id: number } | null;
 }
 
 export const AICopilot: React.FC<AICopilotProps> = ({
@@ -24,6 +25,7 @@ export const AICopilot: React.FC<AICopilotProps> = ({
   notebookNotes,
   collapsed,
   onToggle,
+  externalMessage,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -40,6 +42,16 @@ export const AICopilot: React.FC<AICopilotProps> = ({
   useEffect(() => {
     scrollToBottom();
   }, [messages, isSending]);
+
+  // Fire when the parent pushes an external message (Explain / Simplify / Translate)
+  const lastExternalId = useRef<number>(0);
+  useEffect(() => {
+    if (!externalMessage || externalMessage.id <= lastExternalId.current) return;
+    lastExternalId.current = externalMessage.id;
+    handleSendMessage(externalMessage.text);
+  // handleSendMessage is stable within the render; id change is the real trigger
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalMessage]);
 
   // Reset chat history when document changes
   useEffect(() => {
@@ -83,12 +95,13 @@ export const AICopilot: React.FC<AICopilotProps> = ({
 
     try {
       const sourcesContext = getSourcesContext();
-      // Exclude greeting message from historical API context to save tokens and keep it focused
-      const historyContext = messages.slice(1); 
-      
+      // Slice off the greeting; also exclude userMsg — it is sent as the current
+      // turn via sendMessage, not as part of the prior history.
+      const historyContext = messages.slice(1);
+
       const response = await geminiService.chatWithContext(
         sourcesContext,
-        [...historyContext, userMsg],
+        historyContext,
         text.trim()
       );
 

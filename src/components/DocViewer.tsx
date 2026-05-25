@@ -1,5 +1,5 @@
-import React, { useRef } from 'react';
-import { FileText, BrainCircuit, Sparkles, BookOpen, Loader2, Layers, BookMarked } from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
+import { FileText, BrainCircuit, Sparkles, BookOpen, Loader2, Layers, BookMarked, HelpCircle, Zap, Languages, Plus } from 'lucide-react';
 import { type DocumentData, type FlashcardDeck, type ReferenceSheetData } from '../services/db';
 import { MindMap } from './MindMap';
 import { FlashcardView } from './FlashcardView';
@@ -25,6 +25,9 @@ interface DocViewerProps {
   onGenerateReference: () => void;
   scrollProgress?: number;
   onScrollProgress: (progress: number) => void;
+  onExplainSelection: (action: 'explain' | 'simplify' | 'translate', text: string) => void;
+  onAddSelectionToFlashcard: (text: string) => void;
+  selectionToast: string | null;
 }
 
 // Simple custom Markdown parser/renderer to display AI responses and formatted text neatly
@@ -117,8 +120,29 @@ export const DocViewer: React.FC<DocViewerProps> = ({
   onGenerateReference,
   scrollProgress,
   onScrollProgress,
+  onExplainSelection,
+  onAddSelectionToFlashcard,
+  selectionToast,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [popup, setPopup] = useState<{ x: number; y: number; text: string } | null>(null);
+
+  // Dismiss popup when selection is cleared
+  useEffect(() => {
+    const onSelectionChange = () => {
+      if (!window.getSelection()?.toString().trim()) setPopup(null);
+    };
+    document.addEventListener('selectionchange', onSelectionChange);
+    return () => document.removeEventListener('selectionchange', onSelectionChange);
+  }, []);
+
+  const handleMouseUp = () => {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim() ?? '';
+    if (!text || text.length < 3 || !selection?.rangeCount) { setPopup(null); return; }
+    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    setPopup({ x: rect.left + rect.width / 2, y: rect.top, text });
+  };
 
   const handleScroll = () => {
     const el = scrollRef.current;
@@ -263,7 +287,7 @@ export const DocViewer: React.FC<DocViewerProps> = ({
               </div>
 
               {/* Scrollable Document Text */}
-              <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, overflowY: 'auto', padding: '30px 40px', lineHeight: '1.8', fontSize: '0.98rem', color: 'var(--text-primary)' }}>
+              <div ref={scrollRef} onScroll={handleScroll} onMouseUp={handleMouseUp} style={{ flex: 1, overflowY: 'auto', padding: '30px 40px', lineHeight: '1.8', fontSize: '0.98rem', color: 'var(--text-primary)' }}>
                 <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', wordBreak: 'break-word' }}>
                   {activeDoc.content}
                 </pre>
@@ -294,6 +318,44 @@ export const DocViewer: React.FC<DocViewerProps> = ({
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(8,10,16,0.7)', backdropFilter: 'blur(4px)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '12px', zIndex: 5 }}>
                 <Loader2 size={36} className="animate-spin" style={{ color: 'var(--accent-primary)' }} />
                 <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>Gemini is reading and structuring the file...</span>
+              </div>
+            )}
+
+            {/* Selection popup */}
+            {popup && (
+              <div
+                style={{ position: 'fixed', left: popup.x, top: popup.y - 10, transform: 'translate(-50%, -100%)', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '3px', padding: '5px', background: 'var(--bg-primary)', border: '1px solid var(--border-active)', borderRadius: '10px', boxShadow: '0 8px 28px rgba(0,0,0,0.55)', backdropFilter: 'blur(10px)' }}
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                {([
+                  { action: 'explain',   label: 'Explain',   icon: <HelpCircle size={12} /> },
+                  { action: 'simplify',  label: 'Simplify',  icon: <Zap size={12} /> },
+                  { action: 'translate', label: 'Translate', icon: <Languages size={12} /> },
+                ] as const).map(({ action, label, icon }) => (
+                  <button
+                    key={action}
+                    className="btn-secondary"
+                    style={{ padding: '5px 10px', fontSize: '0.78rem', display: 'flex', gap: '5px', alignItems: 'center' }}
+                    onClick={() => { onExplainSelection(action, popup.text); setPopup(null); }}
+                  >
+                    {icon}{label}
+                  </button>
+                ))}
+                <div style={{ width: '1px', alignSelf: 'stretch', background: 'var(--border-color)', margin: '2px 1px' }} />
+                <button
+                  className="btn-secondary"
+                  style={{ padding: '5px 10px', fontSize: '0.78rem', display: 'flex', gap: '5px', alignItems: 'center', color: '#a78bfa' }}
+                  onClick={() => { onAddSelectionToFlashcard(popup.text); setPopup(null); }}
+                >
+                  <Plus size={12} />Flashcard
+                </button>
+              </div>
+            )}
+
+            {/* Flashcard-added toast */}
+            {selectionToast && (
+              <div style={{ position: 'fixed', bottom: '28px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.4)', color: '#10b981', borderRadius: '8px', padding: '8px 18px', fontSize: '0.85rem', fontWeight: 600, zIndex: 1001, pointerEvents: 'none', backdropFilter: 'blur(8px)' }}>
+                {selectionToast}
               </div>
             )}
           </div>

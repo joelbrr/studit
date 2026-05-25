@@ -73,25 +73,28 @@ export const geminiService = {
     message: string
   ): Promise<string> {
     return withRetry(async (model) => {
-      const systemInstruction = `You are Studit, a brilliant and supportive AI university study assistant.
-Your goal is to help students learn, digest, and master their course materials.
-
-Below is the text content of the student's study materials (documents/notes) that they have uploaded:
------------------------------------------
-${sourcesContext || 'No study materials have been uploaded or selected yet.'}
------------------------------------------
-
+      const persona = `You are Studit, a brilliant and supportive AI university study assistant. Your goal is to help students learn and master their course materials.
 Guidelines:
-1. Ground your answers in the provided study materials as much as possible. Quote or reference specific parts of the source text when helpful.
-2. If the user asks about topics NOT mentioned in the study materials, you may answer using your general knowledge, but explicitly state that this information is not in their uploaded notes.
-3. Be clear, pedagogical, and encouraging. Use markdown for neat styling, code blocks, lists, and bold text.`;
+1. Ground answers in the provided study materials. Quote or reference specific parts when helpful.
+2. If a topic is NOT in the study materials, answer from general knowledge but say so explicitly.
+3. Be clear, pedagogical, and encouraging. Use markdown for neat styling.`;
+
+      // Avoid systemInstruction entirely — some API versions reject it as a plain
+      // string. Instead, inject persona + document content as a synthetic opening
+      // exchange in the conversation history, which is always well-formed.
+      const openingUserText = sourcesContext
+        ? `${persona}\n\nHere are my study materials:\n\n${sourcesContext}`
+        : persona;
 
       const chat = model.startChat({
-        history: history.map((msg) => ({
-          role: msg.role === 'user' ? 'user' : 'model',
-          parts: msg.parts
-        })),
-        systemInstruction
+        history: [
+          { role: 'user',  parts: [{ text: openingUserText }] },
+          { role: 'model', parts: [{ text: "Understood! I've reviewed your study materials and I'm ready to help. What would you like to know?" }] },
+          ...history.map((msg) => ({
+            role: msg.role === 'user' ? 'user' as const : 'model' as const,
+            parts: msg.parts,
+          })),
+        ],
       });
 
       const result = await chat.sendMessage(message);
