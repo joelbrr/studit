@@ -168,6 +168,52 @@ ${docContent.slice(0, 14000)}`;
     });
   },
 
+  async generateExamQuestions(
+    contentDocs: Array<{ name: string; content: string }>,
+    examDocs: Array<{ name: string; content: string }>,
+    count: number
+  ): Promise<{ id: string; question: string; options: string[]; correctIndex: number; explanation: string; topic: string }[]> {
+    return withRetry(async (model) => {
+      const contentSection = contentDocs
+        .map((d) => `=== ${d.name} ===\n${d.content.slice(0, Math.floor(14000 / contentDocs.length))}`)
+        .join('\n\n');
+
+      const styleSection = examDocs.length > 0
+        ? `\n\nEXAM STYLE REFERENCE — match the difficulty, phrasing, and question types found in these past papers:\n${examDocs.map((d) => `=== ${d.name} ===\n${d.content.slice(0, Math.floor(6000 / examDocs.length))}`).join('\n\n')}`
+        : '';
+
+      const prompt = `You are an expert academic examiner. Generate exactly ${count} multiple-choice questions.
+
+STUDY CONTENT (generate questions that test knowledge of THIS material):
+${contentSection}${styleSection}
+
+Respond ONLY with a valid JSON array — no markdown, no extra text:
+[
+  {
+    "question": "Clear, unambiguous question text",
+    "options": ["Option A text", "Option B text", "Option C text", "Option D text"],
+    "correctIndex": 1,
+    "explanation": "Why this answer is correct (1-2 sentences).",
+    "topic": "Short topic name (e.g. 'Thermodynamics', 'Chapter 3')"
+  }
+]
+
+Rules:
+- Exactly 4 options, NO letter prefixes in option text
+- "correctIndex" is 0-based (0=A, 1=B, 2=C, 3=D)
+- Vary difficulty: ~30% recall, ~50% application/analysis, ~20% synthesis
+- Spread questions across all provided study documents and topics
+- Make distractors plausible — not obviously wrong`;
+
+      const result = await model.generateContent(prompt);
+      let text = result.response.text().trim();
+      text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      const parsed = JSON.parse(text);
+      if (!Array.isArray(parsed)) throw new Error('Expected a JSON array from Gemini');
+      return parsed.map((q: any, i: number) => ({ ...q, id: `q_${Date.now()}_${i}` }));
+    });
+  },
+
   async extractReferenceSheet(docTitle: string, docContent: string): Promise<{ terms: { term: string; definition: string }[]; formulas: { label: string; latex: string; description: string }[] }> {
     return withRetry(async (model) => {
       const prompt = `You are an academic document analyzer. Extract all key terms, definitions, equations, and formulas from the document titled "${docTitle}".

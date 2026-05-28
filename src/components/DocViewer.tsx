@@ -1,14 +1,15 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { FileText, BrainCircuit, Sparkles, BookOpen, Loader2, Layers, BookMarked, HelpCircle, Zap, Languages, Plus } from 'lucide-react';
-import { type DocumentData, type FlashcardDeck, type ReferenceSheetData } from '../services/db';
+import { FileText, BrainCircuit, Sparkles, BookOpen, Loader2, Layers, BookMarked, HelpCircle, Zap, Languages, Plus, ClipboardList } from 'lucide-react';
+import { type DocumentData, type FlashcardDeck, type ReferenceSheetData, type ExamQuestion } from '../services/db';
 import { MindMap } from './MindMap';
 import { FlashcardView } from './FlashcardView';
 import { ReferenceSheet } from './ReferenceSheet';
+import { ExamMode } from './ExamMode';
 
 interface DocViewerProps {
   activeDoc: DocumentData | null;
-  activeTab: 'reader' | 'mindmap' | 'flashcards' | 'reference';
-  setActiveTab: (tab: 'reader' | 'mindmap' | 'flashcards' | 'reference') => void;
+  activeTab: 'reader' | 'mindmap' | 'flashcards' | 'reference' | 'exam';
+  setActiveTab: (tab: 'reader' | 'mindmap' | 'flashcards' | 'reference' | 'exam') => void;
   onGenerateSummary: () => void;
   onGenerateMindMap: () => void;
   isGeneratingSummary: boolean;
@@ -23,6 +24,11 @@ interface DocViewerProps {
   referenceSheet: ReferenceSheetData | null;
   isGeneratingReference: boolean;
   onGenerateReference: () => void;
+  allDocs: DocumentData[];
+  examQuestions: ExamQuestion[] | null;
+  isGeneratingExam: boolean;
+  onGenerateExam: (contentDocs: Array<{ name: string; content: string }>, examDocs: Array<{ name: string; content: string }>, count: number) => void;
+  onOpenSettings: () => void;
   scrollProgress?: number;
   onScrollProgress: (progress: number) => void;
   onExplainSelection: (action: 'explain' | 'simplify' | 'translate', text: string) => void;
@@ -118,6 +124,11 @@ export const DocViewer: React.FC<DocViewerProps> = ({
   referenceSheet,
   isGeneratingReference,
   onGenerateReference,
+  allDocs,
+  examQuestions,
+  isGeneratingExam,
+  onGenerateExam,
+  onOpenSettings,
   scrollProgress,
   onScrollProgress,
   onExplainSelection,
@@ -185,7 +196,7 @@ export const DocViewer: React.FC<DocViewerProps> = ({
 
         {/* Tab Controls */}
         <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', padding: '3px', borderRadius: '8px' }}>
-          {(['reader', 'mindmap', 'flashcards', 'reference'] as const).map((tab) => (
+          {(['reader', 'mindmap', 'flashcards', 'reference', 'exam'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -228,6 +239,17 @@ export const DocViewer: React.FC<DocViewerProps> = ({
                   )}
                 </>
               )}
+              {tab === 'exam' && (
+                <>
+                  <ClipboardList size={13} />
+                  Exam
+                  {(examQuestions?.length ?? 0) > 0 && (
+                    <span style={{ background: 'rgba(245,158,11,0.25)', color: '#fbbf24', fontSize: '0.68rem', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', lineHeight: '1.4' }}>
+                      {examQuestions!.length}
+                    </span>
+                  )}
+                </>
+              )}
             </button>
           ))}
         </div>
@@ -242,7 +264,16 @@ export const DocViewer: React.FC<DocViewerProps> = ({
 
       {/* Main Panel Content */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {activeTab === 'reference' ? (
+        {activeTab === 'exam' ? (
+          <ExamMode
+            allDocs={allDocs}
+            examQuestions={examQuestions}
+            isGenerating={isGeneratingExam}
+            geminiApiKeyExists={geminiApiKeyExists}
+            onGenerate={onGenerateExam}
+            onOpenSettings={onOpenSettings}
+          />
+        ) : activeTab === 'reference' ? (
           <ReferenceSheet
             referenceSheet={referenceSheet}
             isGenerating={isGeneratingReference}

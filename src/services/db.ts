@@ -11,6 +11,15 @@ export interface ReferenceSheetData {
   formulas: { label: string; latex: string; description: string }[];
 }
 
+export interface ExamQuestion {
+  id: string;
+  question: string;
+  options: string[];      // exactly 4 options
+  correctIndex: number;   // 0–3
+  explanation: string;
+  topic: string;
+}
+
 export interface DocumentData {
   id: string;
   notebookId: string;
@@ -22,6 +31,7 @@ export interface DocumentData {
   mindmap?: string;
   tags?: string[];
   referenceSheet?: ReferenceSheetData;
+  isExam?: boolean;
   scrollProgress?: number; // 0-100, percent of document scrolled
   reviewed?: boolean;      // true once summary or mind map has been generated
 }

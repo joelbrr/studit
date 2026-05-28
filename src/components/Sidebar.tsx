@@ -17,7 +17,8 @@ import {
   ChevronLeft,
   CalendarDays,
   GraduationCap,
-  CheckCircle2
+  CheckCircle2,
+  ClipboardList
 } from 'lucide-react';
 import { dbService, type Notebook, type DocumentData } from '../services/db';
 import { extractTextFromPdf } from '../services/pdfParser';
@@ -114,6 +115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [activeTagFilters, setActiveTagFilters] = useState<string[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const examFileInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const tagScrollRef = useRef<HTMLDivElement>(null);
 
@@ -283,6 +285,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setIsUploading(false);
     onRefreshDocuments();
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleExamFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !activeNotebookId) return;
+    setIsUploading(true);
+    setErrorMsg('');
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const type = file.name.endsWith('.pdf') ? 'pdf' : file.name.endsWith('.md') ? 'md' : 'txt';
+      try {
+        const content = type === 'pdf' ? await extractTextFromPdf(file) : await file.text();
+        await dbService.saveDocument({
+          id: crypto.randomUUID(),
+          notebookId: activeNotebookId,
+          name: file.name,
+          content,
+          type: type as 'pdf' | 'md' | 'txt',
+          createdAt: Date.now(),
+          isExam: true,
+        });
+      } catch (err) {
+        console.error(err);
+        setErrorMsg(`Failed to parse: ${file.name}`);
+      }
+    }
+    setIsUploading(false);
+    onRefreshDocuments();
+    if (examFileInputRef.current) examFileInputRef.current.value = '';
   };
 
   const handleCreateNote = async (e: React.FormEvent) => {
@@ -544,13 +575,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 <Upload size={16} />
               </button>
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileUpload} 
+              <button
+                onClick={() => examFileInputRef.current?.click()}
+                className="btn-icon"
+                style={{ width: '24px', height: '24px', color: 'rgba(251,191,36,0.7)' }}
+                title="Upload Exam Paper"
+              >
+                <ClipboardList size={15} />
+              </button>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
                 multiple
-                accept=".pdf,.txt,.md" 
-                style={{ display: 'none' }} 
+                accept=".pdf,.txt,.md"
+                style={{ display: 'none' }}
+              />
+              <input
+                type="file"
+                ref={examFileInputRef}
+                onChange={handleExamFileUpload}
+                multiple
+                accept=".pdf,.txt,.md"
+                style={{ display: 'none' }}
               />
             </div>
           </div>
@@ -693,11 +740,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
-                      {doc.reviewed
-                        ? <CheckCircle2 size={14} style={{ color: '#10b981', flexShrink: 0 }} />
-                        : <FileText size={14} style={{ color: doc.type === 'pdf' ? '#ef4444' : doc.type === 'md' ? '#3b82f6' : 'var(--text-muted)', flexShrink: 0 }} />
+                      {doc.isExam
+                        ? <ClipboardList size={14} style={{ color: '#fbbf24', flexShrink: 0 }} />
+                        : doc.reviewed
+                          ? <CheckCircle2 size={14} style={{ color: '#10b981', flexShrink: 0 }} />
+                          : <FileText size={14} style={{ color: doc.type === 'pdf' ? '#ef4444' : doc.type === 'md' ? '#3b82f6' : 'var(--text-muted)', flexShrink: 0 }} />
                       }
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{doc.name}</span>
+                      {doc.isExam && (
+                        <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#fbbf24', background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.25)', borderRadius: '4px', padding: '1px 4px', flexShrink: 0, letterSpacing: '0.04em' }}>
+                          EXAM
+                        </span>
+                      )}
                       {doc.reviewed && (
                         <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '8px', padding: '1px 5px', whiteSpace: 'nowrap', flexShrink: 0 }}>
                           Reviewed

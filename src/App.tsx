@@ -4,7 +4,7 @@ import { DocViewer } from './components/DocViewer';
 import { AICopilot } from './components/AICopilot';
 import { NotebookScratchpad } from './components/NotebookScratchpad';
 import { StudyPlanner } from './components/StudyPlanner';
-import { dbService, type Notebook, type DocumentData, type Flashcard, type FlashcardDeck } from './services/db';
+import { dbService, type Notebook, type DocumentData, type Flashcard, type FlashcardDeck, type ExamQuestion } from './services/db';
 import { geminiService } from './services/gemini';
 import { X, Key } from 'lucide-react';
 
@@ -34,7 +34,7 @@ export const App: React.FC = () => {
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'reader' | 'mindmap' | 'flashcards' | 'reference'>('reader');
+  const [activeTab, setActiveTab] = useState<'reader' | 'mindmap' | 'flashcards' | 'reference' | 'exam'>('reader');
   const [showSettings, setShowSettings] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
 
@@ -43,6 +43,8 @@ export const App: React.FC = () => {
   const [isGeneratingMindMap, setIsGeneratingMindMap] = useState(false);
   const [isGeneratingFlashcards, setIsGeneratingFlashcards] = useState(false);
   const [isGeneratingReference, setIsGeneratingReference] = useState(false);
+  const [isGeneratingExam, setIsGeneratingExam] = useState(false);
+  const [examQuestions, setExamQuestions] = useState<ExamQuestion[] | null>(null);
 
   // Flashcard deck for the active document
   const [activeFlashcardDeck, setActiveFlashcardDeck] = useState<FlashcardDeck | null>(null);
@@ -85,9 +87,10 @@ export const App: React.FC = () => {
     }
   }, [activeDocId]);
 
-  // Reset study plan when switching notebooks
+  // Reset study plan and exam questions when switching notebooks
   useEffect(() => {
     setStudyPlan(null);
+    setExamQuestions(null);
   }, [activeNotebookId]);
 
   // Load flashcard deck when active document changes
@@ -298,6 +301,24 @@ export const App: React.FC = () => {
     await dbService.saveDeck(updatedDeck);
   };
 
+  // Exam question generation
+  const handleGenerateExam = async (
+    contentDocs: Array<{ name: string; content: string }>,
+    examDocs: Array<{ name: string; content: string }>,
+    count: number
+  ) => {
+    setIsGeneratingExam(true);
+    try {
+      const questions = await geminiService.generateExamQuestions(contentDocs, examDocs, count);
+      setExamQuestions(questions);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to generate exam questions: ' + (err as Error).message);
+    } finally {
+      setIsGeneratingExam(false);
+    }
+  };
+
   // Reference sheet extraction
   const handleGenerateReference = async () => {
     if (!activeDoc) return;
@@ -391,6 +412,11 @@ export const App: React.FC = () => {
             referenceSheet={activeDoc?.referenceSheet ?? null}
             isGeneratingReference={isGeneratingReference}
             onGenerateReference={handleGenerateReference}
+            allDocs={documents}
+            examQuestions={examQuestions}
+            isGeneratingExam={isGeneratingExam}
+            onGenerateExam={handleGenerateExam}
+            onOpenSettings={() => setShowSettings(true)}
             scrollProgress={activeDoc?.scrollProgress}
             onScrollProgress={handleScrollProgress}
             onExplainSelection={handleExplainSelection}
