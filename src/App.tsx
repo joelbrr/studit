@@ -6,6 +6,7 @@ import { NotebookScratchpad } from './components/NotebookScratchpad';
 import { StudyPlanner } from './components/StudyPlanner';
 import { dbService, type Notebook, type DocumentData, type Flashcard, type FlashcardDeck, type ExamQuestion } from './services/db';
 import { geminiService } from './services/gemini';
+import { exportNotebook } from './services/export';
 import { X, Key } from 'lucide-react';
 
 function sm2Update(card: Flashcard, rating: 'easy' | 'medium' | 'hard'): Flashcard {
@@ -57,6 +58,7 @@ export const App: React.FC = () => {
   const [showStudyPlanner, setShowStudyPlanner] = useState(false);
   const [studyPlan, setStudyPlan] = useState<string | null>(null);
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [externalCopilotMessage, setExternalCopilotMessage] = useState<{ text: string; id: number } | null>(null);
@@ -232,6 +234,20 @@ export const App: React.FC = () => {
     await dbService.saveNotebook(updated);
   };
 
+  // Notebook export
+  const handleExportNotebook = async () => {
+    if (!activeNotebook) return;
+    setIsExporting(true);
+    try {
+      await exportNotebook(activeNotebook, documents, hasApiKey);
+    } catch (err) {
+      console.error(err);
+      alert('Export failed: ' + (err as Error).message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   // Study plan generation
   const handleGenerateStudyPlan = async () => {
     if (!activeNotebook?.examDate || documents.length === 0) return;
@@ -386,6 +402,8 @@ export const App: React.FC = () => {
               isGeneratingPlan={isGeneratingPlan}
               studyPlan={studyPlan}
               onOpenSettings={() => setShowSettings(true)}
+              onExport={handleExportNotebook}
+              isExporting={isExporting}
             />
           ) : showScratchpad && activeNotebook ? (
             <NotebookScratchpad

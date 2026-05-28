@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CalendarDays, GraduationCap, Loader2, Zap, Trash2 } from 'lucide-react';
+import { CalendarDays, GraduationCap, Loader2, Zap, Trash2, PackageOpen, CheckCircle2, Circle } from 'lucide-react';
 import { type Notebook, type DocumentData } from '../services/db';
 import { MarkdownRenderer } from './DocViewer';
 
@@ -12,6 +12,8 @@ interface StudyPlannerProps {
   isGeneratingPlan: boolean;
   studyPlan: string | null;
   onOpenSettings: () => void;
+  onExport: () => void;
+  isExporting: boolean;
 }
 
 function getDaysLeft(examDate: number): number {
@@ -37,6 +39,8 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({
   isGeneratingPlan,
   studyPlan,
   onOpenSettings,
+  onExport,
+  isExporting,
 }) => {
   const [dateInput, setDateInput] = useState(
     notebook.examDate ? new Date(notebook.examDate).toISOString().split('T')[0] : ''
@@ -180,6 +184,79 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({
         {studyPlan && (
           <div className="glass animate-fade" style={{ padding: '28px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
             <MarkdownRenderer content={studyPlan} />
+          </div>
+        )}
+
+        {/* Export Study Pack */}
+        {documents.length > 0 && (
+          <div className="glass" style={{ padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fff', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <PackageOpen size={15} style={{ color: 'var(--accent-primary)' }} />
+              Export Study Pack
+            </h3>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: '1.5' }}>
+              Downloads a <strong style={{ color: 'var(--text-secondary)' }}>.zip</strong> with everything generated so far across all documents, plus a fresh AI study guide.
+            </p>
+
+            {/* Content preview */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '16px' }}>
+              {/* Study Guide row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                {geminiApiKeyExists
+                  ? <CheckCircle2 size={13} style={{ color: '#10b981', flexShrink: 0 }} />
+                  : <Circle size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
+                <span>
+                  <strong style={{ color: '#fff' }}>study_guide.md</strong>
+                  {geminiApiKeyExists ? ' — generated fresh on export' : ' — requires API key'}
+                </span>
+              </div>
+
+              {/* Per-doc rows */}
+              {documents.map((doc) => {
+                const hasSummary = !!doc.summary;
+                const hasMindmap = !!doc.mindmap;
+                const hasRef = !!(doc.referenceSheet && (doc.referenceSheet.terms.length + doc.referenceSheet.formulas.length) > 0);
+                const items = [
+                  hasSummary && 'summary',
+                  hasMindmap && 'mindmap.svg',
+                  hasRef && 'reference',
+                ].filter(Boolean) as string[];
+
+                return (
+                  <div key={doc.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.78rem' }}>
+                    {items.length > 0
+                      ? <CheckCircle2 size={13} style={{ color: '#10b981', flexShrink: 0, marginTop: '2px' }} />
+                      : <Circle size={13} style={{ color: 'var(--text-muted)', flexShrink: 0, marginTop: '2px' }} />}
+                    <span>
+                      <span style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {doc.name.length > 40 ? doc.name.slice(0, 40) + '…' : doc.name}
+                      </span>
+                      {items.length > 0
+                        ? <span style={{ color: 'var(--text-muted)', marginLeft: '6px' }}>({items.join(', ')})</span>
+                        : <span style={{ color: 'var(--text-muted)', marginLeft: '6px' }}>— no content generated yet</span>}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={geminiApiKeyExists ? onExport : onOpenSettings}
+              disabled={isExporting}
+              className="btn-primary"
+              style={{ padding: '10px 20px', fontSize: '0.85rem', display: 'flex', gap: '8px', alignItems: 'center', borderRadius: '8px' }}
+            >
+              {isExporting ? (
+                <><Loader2 size={15} className="animate-spin" /> Generating pack…</>
+              ) : (
+                <><PackageOpen size={15} /> Download Study Pack (.zip)</>
+              )}
+            </button>
+            {!geminiApiKeyExists && (
+              <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+                Add an API key to include the AI study guide in the export.
+              </p>
+            )}
           </div>
         )}
       </div>
