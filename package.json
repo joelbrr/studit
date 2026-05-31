@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.106.2",
     "@types/jszip": "^3.4.1",
     "@types/katex": "^0.16.8",
     "jszip": "^3.10.1",

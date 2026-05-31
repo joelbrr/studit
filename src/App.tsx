@@ -4,10 +4,13 @@ import { DocViewer } from './components/DocViewer';
 import { AICopilot } from './components/AICopilot';
 import { NotebookScratchpad } from './components/NotebookScratchpad';
 import { StudyPlanner } from './components/StudyPlanner';
+import { AuthScreen } from './components/AuthScreen';
 import { dbService, type Notebook, type DocumentData, type Flashcard, type FlashcardDeck, type ExamQuestion } from './services/db';
 import { geminiService } from './services/gemini';
 import { exportNotebook } from './services/export';
-import { X, Key } from 'lucide-react';
+import { supabase } from './services/supabase';
+import { X, Key, Loader2 } from 'lucide-react';
+import type { User } from '@supabase/supabase-js';
 
 function sm2Update(card: Flashcard, rating: 'easy' | 'medium' | 'hard'): Flashcard {
   const q = rating === 'easy' ? 5 : rating === 'medium' ? 3 : 1;
@@ -30,6 +33,9 @@ function sm2Update(card: Flashcard, rating: 'easy' | 'medium' | 'hard'): Flashca
 }
 
 export const App: React.FC = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
   const [documents, setDocuments] = useState<DocumentData[]>([]);
@@ -65,16 +71,33 @@ export const App: React.FC = () => {
   const [selectionToast, setSelectionToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load notebooks on mount
+  // Auth state — resolve session on mount, subscribe to changes
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const u = session?.user ?? null;
+      if (u) dbService.setCurrentUser(u.id);
+      setUser(u);
+      setAuthLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const u = session?.user ?? null;
+      dbService.setCurrentUser(u?.id ?? null);
+      setUser(u);
+      setAuthLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Load data once authenticated
+  useEffect(() => {
+    if (!user) return;
     loadNotebooks();
     const storedKey = dbService.getApiKey();
     setApiKeyInput(storedKey);
-    // If no key is set, prompt settings modal on initial load to guide user
-    if (!storedKey) {
-      setShowSettings(true);
-    }
-  }, []);
+    if (!storedKey) setShowSettings(true);
+  }, [user]);
 
   // Reload documents when active notebook changes
   useEffect(() => {
@@ -135,6 +158,17 @@ export const App: React.FC = () => {
     e.preventDefault();
     dbService.setApiKey(apiKeyInput.trim());
     setShowSettings(false);
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setNotebooks([]);
+    setDocuments([]);
+    setActiveNotebookId(null);
+    setActiveDocId(null);
+    setStudyPlan(null);
+    setExamQuestions(null);
+    setApiKeyInput('');
   };
 
   const activeDoc = documents.find((doc) => doc.id === activeDocId) || null;
@@ -369,6 +403,18 @@ export const App: React.FC = () => {
     }
   };
 
+  if (authLoading) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)' }}>
+        <Loader2 size={32} className="animate-spin" style={{ color: 'var(--accent-primary)' }} />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthScreen onAuthenticated={() => {/* auth state change fires automatically */}} />;
+  }
+
   return (
     <div className="app-container">
       <div className="main-layout">
@@ -387,6 +433,8 @@ export const App: React.FC = () => {
           onOpenScratchpad={() => { setShowScratchpad(true); setShowStudyPlanner(false); setActiveDocId(null); }}
           isStudyPlannerOpen={showStudyPlanner}
           onOpenStudyPlanner={() => { setShowStudyPlanner(true); setShowScratchpad(false); setActiveDocId(null); }}
+          userEmail={user.email ?? ''}
+          onSignOut={handleSignOut}
         />
 
         {/* Workspace Central Canvas */}

@@ -18,7 +18,9 @@ import {
   CalendarDays,
   GraduationCap,
   CheckCircle2,
-  ClipboardList
+  ClipboardList,
+  LogOut,
+  User,
 } from 'lucide-react';
 import { dbService, type Notebook, type DocumentData } from '../services/db';
 import { extractTextFromPdf } from '../services/pdfParser';
@@ -81,6 +83,8 @@ interface SidebarProps {
   onOpenScratchpad: () => void;
   isStudyPlannerOpen: boolean;
   onOpenStudyPlanner: () => void;
+  userEmail: string;
+  onSignOut: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -97,6 +101,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenScratchpad,
   isStudyPlannerOpen,
   onOpenStudyPlanner,
+  userEmail,
+  onSignOut,
 }) => {
   const [newNotebookName, setNewNotebookName] = useState('');
   const [isAddingNotebook, setIsAddingNotebook] = useState(false);
@@ -857,6 +863,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
         </>
       )}
+      {/* User footer */}
+      <div style={{
+        padding: '10px 14px',
+        borderTop: '1px solid var(--border-color)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        flexShrink: 0,
+      }}>
+        <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(139,92,246,0.2)', border: '1px solid rgba(139,92,246,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <User size={13} style={{ color: 'var(--accent-primary)' }} />
+        </div>
+        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }} title={userEmail}>
+          {userEmail}
+        </span>
+        <button
+          onClick={onSignOut}
+          className="btn-icon"
+          title="Sign out"
+          style={{ flexShrink: 0 }}
+        >
+          <LogOut size={14} />
+        </button>
+      </div>
     </aside>
   );
 };
