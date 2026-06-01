@@ -288,6 +288,7 @@ export const DocViewer: React.FC<DocViewerProps> = ({
             geminiApiKeyExists={geminiApiKeyExists}
             onGenerate={onGenerateFlashcards}
             onRateCard={onRateCard}
+            docName={activeDoc.name}
           />
         ) : activeTab === 'reader' ? (
           <div style={{ flex: 1, display: 'flex', height: '100%', overflow: 'hidden' }}>

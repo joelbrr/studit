@@ -296,6 +296,56 @@ Use emojis, clear markdown, and an encouraging tone!`;
     });
   },
 
+  async generateSocraticChallenge(
+    cardFront: string,
+    cardBack: string,
+    docName?: string
+  ): Promise<string> {
+    return withRetry(async (model) => {
+      const prompt = `You are a Socratic tutor. A student just reviewed this flashcard:
+
+Question: "${cardFront}"
+Answer: "${cardBack}"${docName ? `\nSubject context: ${docName}` : ''}
+
+Generate ONE concise Socratic challenge (max 2 sentences) that pushes them beyond simple recall. It must require them to:
+- Explain the concept in their own words, OR
+- Give a real-world analogy or example, OR
+- Connect it to a related concept or principle, OR
+- Identify a limitation, edge case, or exception
+
+Rules: do NOT ask them to repeat the answer. Do NOT use yes/no questions. Do NOT use a preamble like "Great!" or "Here is a question:".
+Respond with ONLY the question.`;
+
+      const result = await model.generateContent(prompt);
+      return result.response.text().trim();
+    });
+  },
+
+  async respondToSocraticAnswer(
+    cardFront: string,
+    cardBack: string,
+    challenge: string,
+    studentAnswer: string
+  ): Promise<string> {
+    return withRetry(async (model) => {
+      const prompt = `You are a Socratic tutor evaluating a student's explanation.
+
+Flashcard — Question: "${cardFront}" | Answer: "${cardBack}"
+Your challenge: "${challenge}"
+Student's response: "${studentAnswer}"
+
+Write a reply of exactly 2-3 sentences that:
+1. Acknowledges what they captured well — WITHOUT saying "correct" or "wrong"
+2. Surfaces one gap, an unexplored angle, or gently challenges an assumption in their response
+3. Ends with a brief insight or follow-up thought that deepens their understanding
+
+Tone: intellectually engaging, encouraging, concise. No bullet points. No preamble. Just the response.`;
+
+      const result = await model.generateContent(prompt);
+      return result.response.text().trim();
+    });
+  },
+
   async generateMindMap(docTitle: string, docContent: string): Promise<string> {
     return withRetry(async (model) => {
       const prompt = `You are a concept-map assistant. Your job is to distill a document into a clear, readable concept map that reveals meaningful relationships between ideas.
