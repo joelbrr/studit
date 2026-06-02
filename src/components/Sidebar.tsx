@@ -21,6 +21,7 @@ import {
   ClipboardList,
   LogOut,
   User,
+  Shuffle,
 } from 'lucide-react';
 import { dbService, type Notebook, type DocumentData } from '../services/db';
 import { extractTextFromPdf } from '../services/pdfParser';
@@ -83,6 +84,8 @@ interface SidebarProps {
   onOpenScratchpad: () => void;
   isStudyPlannerOpen: boolean;
   onOpenStudyPlanner: () => void;
+  isMixedSessionOpen: boolean;
+  onOpenMixedSession: () => void;
   userEmail: string;
   onSignOut: () => void;
 }
@@ -101,6 +104,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenScratchpad,
   isStudyPlannerOpen,
   onOpenStudyPlanner,
+  isMixedSessionOpen,
+  onOpenMixedSession,
   userEmail,
   onSignOut,
 }) => {
@@ -556,6 +561,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 title="Study Planner & Exam Countdown"
               >
                 <GraduationCap size={15} />
+              </button>
+              <button
+                onClick={onOpenMixedSession}
+                className="btn-icon"
+                style={{ width: '24px', height: '24px', color: isMixedSessionOpen ? 'var(--accent-primary)' : undefined }}
+                title="Mixed Study Session"
+              >
+                <Shuffle size={15} />
               </button>
               <button
                 onClick={onOpenScratchpad}

@@ -4,6 +4,7 @@ import { DocViewer } from './components/DocViewer';
 import { AICopilot } from './components/AICopilot';
 import { NotebookScratchpad } from './components/NotebookScratchpad';
 import { StudyPlanner } from './components/StudyPlanner';
+import { MixedSession } from './components/MixedSession';
 import { AuthScreen } from './components/AuthScreen';
 import { dbService, type Notebook, type DocumentData, type Flashcard, type FlashcardDeck, type ExamQuestion } from './services/db';
 import { geminiService } from './services/gemini';
@@ -55,9 +56,12 @@ export const App: React.FC = () => {
 
   // Flashcard deck for the active document
   const [activeFlashcardDeck, setActiveFlashcardDeck] = useState<FlashcardDeck | null>(null);
+  // All decks for the active notebook (used by Mixed Session)
+  const [allNotebookDecks, setAllNotebookDecks] = useState<FlashcardDeck[]>([]);
 
   // Notebook scratchpad
   const [showScratchpad, setShowScratchpad] = useState(false);
+  const [showMixedSession, setShowMixedSession] = useState(false);
   const [copilotCollapsed, setCopilotCollapsed] = useState(false);
 
   // Study planner
@@ -99,23 +103,26 @@ export const App: React.FC = () => {
     if (!storedKey) setShowSettings(true);
   }, [user]);
 
-  // Reload documents when active notebook changes
+  // Reload documents + all decks when active notebook changes
   useEffect(() => {
     loadDocuments();
+    loadAllNotebookDecks();
   }, [activeNotebookId]);
 
-  // Auto-dismiss scratchpad/planner when a document is selected
+  // Auto-dismiss panels when a document is selected
   useEffect(() => {
     if (activeDocId) {
       setShowScratchpad(false);
       setShowStudyPlanner(false);
+      setShowMixedSession(false);
     }
   }, [activeDocId]);
 
-  // Reset study plan and exam questions when switching notebooks
+  // Reset per-notebook state when switching notebooks
   useEffect(() => {
     setStudyPlan(null);
     setExamQuestions(null);
+    setShowMixedSession(false);
   }, [activeNotebookId]);
 
   // Load flashcard deck when active document changes
@@ -151,6 +158,16 @@ export const App: React.FC = () => {
       setDocuments(list);
     } catch (err) {
       console.error('Failed to load documents', err);
+    }
+  };
+
+  const loadAllNotebookDecks = async () => {
+    if (!activeNotebookId) { setAllNotebookDecks([]); return; }
+    try {
+      const decks = await dbService.getDecksByNotebook(activeNotebookId);
+      setAllNotebookDecks(decks);
+    } catch (err) {
+      console.error('Failed to load notebook decks', err);
     }
   };
 
@@ -332,6 +349,10 @@ export const App: React.FC = () => {
       };
       await dbService.saveDeck(deck);
       setActiveFlashcardDeck(deck);
+      setAllNotebookDecks((prev) => {
+        const exists = prev.find((d) => d.id === deck.id);
+        return exists ? prev.map((d) => d.id === deck.id ? deck : d) : [...prev, deck];
+      });
     } catch (err) {
       console.error(err);
       alert('Failed to generate flashcards: ' + (err as Error).message);
@@ -340,7 +361,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // Spaced-repetition card rating
+  // Spaced-repetition card rating (single-deck, from DocViewer)
   const handleRateCard = async (cardId: string, rating: 'easy' | 'medium' | 'hard') => {
     if (!activeFlashcardDeck) return;
     const updatedCards = activeFlashcardDeck.cards.map((c) =>
@@ -348,6 +369,18 @@ export const App: React.FC = () => {
     );
     const updatedDeck: FlashcardDeck = { ...activeFlashcardDeck, cards: updatedCards, updatedAt: Date.now() };
     setActiveFlashcardDeck(updatedDeck);
+    setAllNotebookDecks((prev) => prev.map((d) => d.id === updatedDeck.id ? updatedDeck : d));
+    await dbService.saveDeck(updatedDeck);
+  };
+
+  // Spaced-repetition card rating (any deck, from Mixed Session)
+  const handleRateAnyCard = async (cardId: string, deckId: string, rating: 'easy' | 'medium' | 'hard') => {
+    const deck = allNotebookDecks.find((d) => d.id === deckId);
+    if (!deck) return;
+    const updatedCards = deck.cards.map((c) => c.id === cardId ? sm2Update(c, rating) : c);
+    const updatedDeck: FlashcardDeck = { ...deck, cards: updatedCards, updatedAt: Date.now() };
+    setAllNotebookDecks((prev) => prev.map((d) => d.id === deckId ? updatedDeck : d));
+    if (activeFlashcardDeck?.id === deckId) setActiveFlashcardDeck(updatedDeck);
     await dbService.saveDeck(updatedDeck);
   };
 
@@ -432,14 +465,25 @@ export const App: React.FC = () => {
           isScratchpadOpen={showScratchpad}
           onOpenScratchpad={() => { setShowScratchpad(true); setShowStudyPlanner(false); setActiveDocId(null); }}
           isStudyPlannerOpen={showStudyPlanner}
-          onOpenStudyPlanner={() => { setShowStudyPlanner(true); setShowScratchpad(false); setActiveDocId(null); }}
+          onOpenStudyPlanner={() => { setShowStudyPlanner(true); setShowScratchpad(false); setShowMixedSession(false); setActiveDocId(null); }}
+          isMixedSessionOpen={showMixedSession}
+          onOpenMixedSession={() => { setShowMixedSession(true); setShowStudyPlanner(false); setShowScratchpad(false); setActiveDocId(null); }}
           userEmail={user.email ?? ''}
           onSignOut={handleSignOut}
         />
 
         {/* Workspace Central Canvas */}
         <div className="workspace-container">
-          {showStudyPlanner && activeNotebook ? (
+          {showMixedSession && activeNotebook ? (
+            <MixedSession
+              key={activeNotebook.id}
+              notebookName={activeNotebook.name}
+              allDecks={allNotebookDecks}
+              documents={documents}
+              geminiApiKeyExists={hasApiKey}
+              onRateCard={handleRateAnyCard}
+            />
+          ) : showStudyPlanner && activeNotebook ? (
             <StudyPlanner
               key={activeNotebook.id}
               notebook={activeNotebook}

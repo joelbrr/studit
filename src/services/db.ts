@@ -211,6 +211,15 @@ export const dbService = {
   },
 
   // ── Flashcard Decks ──────────────────────────────────────────────────────
+  async getDecksByNotebook(notebookId: string): Promise<FlashcardDeck[]> {
+    const { data, error } = await supabase
+      .from('flashcard_decks')
+      .select('*')
+      .eq('notebook_id', notebookId);
+    if (error) throw error;
+    return (data ?? []).map(fromRow_Deck);
+  },
+
   async getDeckByDocId(docId: string): Promise<FlashcardDeck | null> {
     const { data, error } = await supabase
       .from('flashcard_decks')
