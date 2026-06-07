@@ -22,6 +22,16 @@ export interface ExamQuestion {
   topic: string;
 }
 
+export interface Annotation {
+  id: string;
+  text: string;           // the highlighted passage
+  note: string;           // user's written note (may be empty)
+  color: 'yellow' | 'green' | 'blue' | 'pink' | 'orange';
+  offset: number;         // char offset in doc.content
+  length: number;         // char length of selection
+  createdAt: number;
+}
+
 export interface DocumentData {
   id: string;
   notebookId: string;
@@ -36,6 +46,8 @@ export interface DocumentData {
   isExam?: boolean;
   scrollProgress?: number;
   reviewed?: boolean;
+  annotations?: Annotation[];
+  formattedContent?: string; // AI-cleaned Markdown version of the raw content
 }
 
 export interface Flashcard {
@@ -97,6 +109,8 @@ function fromRow_Document(r: any): DocumentData {
     isExam:         r.is_exam         ?? false,
     scrollProgress: r.scroll_progress ?? 0,
     reviewed:       r.reviewed        ?? false,
+    ...(r.annotations      != null && { annotations: r.annotations as Annotation[] }),
+    ...(r.formatted_content != null && { formattedContent: r.formatted_content as string }),
   };
 }
 
@@ -116,6 +130,8 @@ function toRow_Document(doc: DocumentData, userId: string) {
     is_exam: doc.isExam ?? false,
     scroll_progress: doc.scrollProgress ?? 0,
     reviewed: doc.reviewed ?? false,
+    annotations: doc.annotations ?? null,
+    formatted_content: doc.formattedContent ?? null,
   };
 }
 

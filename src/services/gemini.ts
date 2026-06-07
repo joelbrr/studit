@@ -296,6 +296,42 @@ Use emojis, clear markdown, and an encouraging tone!`;
     });
   },
 
+  async reformatDocumentText(docName: string, rawText: string): Promise<string> {
+    return withRetry(async (model) => {
+      const LIMIT = 30_000;
+      const truncated = rawText.length > LIMIT;
+      const input = truncated ? rawText.slice(0, LIMIT) : rawText;
+
+      const prompt = `You are a document formatter. The text below was extracted from a PDF titled "${docName}". PDF extraction destroyed all visual structure — font sizes, columns, spacing, and indentation are gone.
+
+Reconstruct it as clean, readable Markdown. Rules:
+1. Preserve EVERY piece of content. Do NOT summarise, skip, or translate anything.
+2. Detect headings (short lines, slide titles, section labels) — use ## and ###
+3. Detect bullet or numbered lists — use - and 1.
+4. Detect term/definition patterns (a short label followed by its explanation) — format as **Term** — definition
+5. Separate paragraphs and list items with blank lines
+6. Remove PDF artifacts: mid-sentence page numbers, repeated running headers/footers
+7. Convert [Page N] markers to ---
+8. Output ONLY the Markdown. No preamble, no explanation.
+
+Raw text:
+${input}${truncated ? '\n\n---\n*(Document truncated — use Raw view for the complete text)*' : ''}`;
+
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        // Reformatting is mechanical, not reasoning: disable "thinking" so the whole
+        // output budget goes to the reconstructed text, and raise the cap so long
+        // documents aren't cut off (an exhausted budget returns empty text otherwise).
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 32768,
+          thinkingConfig: { thinkingBudget: 0 },
+        } as any,
+      });
+      return result.response.text().trim();
+    });
+  },
+
   async generateSocraticChallenge(
     cardFront: string,
     cardBack: string,

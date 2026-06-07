@@ -69,6 +69,9 @@ export const App: React.FC = () => {
   const [studyPlan, setStudyPlan] = useState<string | null>(null);
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isFormattingDoc, setIsFormattingDoc] = useState(false);
+  const [formatError, setFormatError] = useState<string | null>(null);
+  const formattingInProgressRef = useRef(false);
 
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [externalCopilotMessage, setExternalCopilotMessage] = useState<{ text: string; id: number } | null>(null);
@@ -260,6 +263,43 @@ export const App: React.FC = () => {
   };
 
   // Save scratchpad content as a new document in Sources
+  // Reformat raw extracted PDF text into clean, structured Markdown for the Reader.
+  // Used both as a manual trigger (button) and automatically when a PDF is first opened.
+  const handleFormatDocument = async (docOverride?: DocumentData) => {
+    const target = docOverride ?? activeDoc;
+    if (!target || !hasApiKey) return;
+    if (target.formattedContent) return;            // already formatted
+    if (formattingInProgressRef.current) return;    // guard against concurrent / StrictMode double-run
+    formattingInProgressRef.current = true;
+    setFormatError(null);
+    setIsFormattingDoc(true);
+    try {
+      const formatted = await geminiService.reformatDocumentText(target.name, target.content);
+      if (!formatted || !formatted.trim()) {
+        throw new Error('The model returned an empty response (the document may have been blocked or is too large).');
+      }
+      const updatedDoc: DocumentData = { ...target, formattedContent: formatted };
+      setDocuments((prev) => prev.map((d) => d.id === target.id ? { ...d, formattedContent: formatted } : d));
+      await dbService.saveDocument(updatedDoc);
+    } catch (err) {
+      console.error('Failed to format document', err);
+      setFormatError((err as Error).message || 'Unknown error');
+    } finally {
+      formattingInProgressRef.current = false;
+      setIsFormattingDoc(false);
+    }
+  };
+
+  // Auto-format PDFs the first time they're opened — txt/md are already clean.
+  useEffect(() => {
+    setFormatError(null); // clear any stale error from a previously opened doc
+    if (!activeDoc || activeDoc.type !== 'pdf') return;
+    if (activeDoc.formattedContent || !hasApiKey) return;
+    handleFormatDocument(activeDoc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDocId, hasApiKey]);
+
+  // Save scratchpad content as a new document in Sources
   const handleSaveNotesAsDocument = async (content: string) => {
     if (!activeNotebook) return;
     const timestamp = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -402,6 +442,25 @@ export const App: React.FC = () => {
     }
   };
 
+  // Annotation save / delete
+  const handleSaveAnnotation = async (annotation: import('./services/db').Annotation) => {
+    if (!activeDoc) return;
+    const existing = activeDoc.annotations ?? [];
+    const updated = [...existing.filter(a => a.id !== annotation.id), annotation]
+      .sort((a, b) => a.offset - b.offset);
+    const updatedDoc: DocumentData = { ...activeDoc, annotations: updated };
+    setDocuments(prev => prev.map(d => d.id === updatedDoc.id ? updatedDoc : d));
+    await dbService.saveDocument(updatedDoc);
+  };
+
+  const handleDeleteAnnotation = async (annotationId: string) => {
+    if (!activeDoc) return;
+    const updated = (activeDoc.annotations ?? []).filter(a => a.id !== annotationId);
+    const updatedDoc: DocumentData = { ...activeDoc, annotations: updated };
+    setDocuments(prev => prev.map(d => d.id === updatedDoc.id ? updatedDoc : d));
+    await dbService.saveDocument(updatedDoc);
+  };
+
   // Reference sheet extraction
   const handleGenerateReference = async () => {
     if (!activeDoc) return;
@@ -532,6 +591,11 @@ export const App: React.FC = () => {
             onExplainSelection={handleExplainSelection}
             onAddSelectionToFlashcard={handleAddSelectionToFlashcard}
             selectionToast={selectionToast}
+            onSaveAnnotation={handleSaveAnnotation}
+            onDeleteAnnotation={handleDeleteAnnotation}
+            isFormattingDoc={isFormattingDoc}
+            onFormatDocument={handleFormatDocument}
+            formatError={formatError}
           />
           )}
         </div>
