@@ -27,9 +27,10 @@ export interface Annotation {
   text: string;           // the highlighted passage
   note: string;           // user's written note (may be empty)
   color: 'yellow' | 'green' | 'blue' | 'pink' | 'orange';
-  offset: number;         // char offset in doc.content
+  offset: number;         // char offset within the anchored view's text
   length: number;         // char length of selection
   createdAt: number;
+  anchor?: 'raw' | 'formatted'; // which view the offset is relative to (default 'raw')
 }
 
 export interface DocumentData {

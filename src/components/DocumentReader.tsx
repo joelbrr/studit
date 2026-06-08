@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import {
   Sparkles, HelpCircle, Zap, Languages, Plus, Trash2, X, Edit2, Highlighter, Loader2
 } from 'lucide-react';
@@ -21,6 +21,7 @@ const COLOR_KEYS: ColorKey[] = ['yellow', 'green', 'blue', 'pink', 'orange'];
 
 // ─── DOM helpers ──────────────────────────────────────────────────────────────
 
+// Offset within a <pre>-style container (raw view: rendered text === source string).
 function getSelectionCharOffset(
   container: HTMLElement
 ): { offset: number; length: number; text: string } | null {
@@ -39,39 +40,66 @@ function getSelectionCharOffset(
   return { offset, length: text.length, text };
 }
 
-// ─── Annotated text renderer ──────────────────────────────────────────────────
+// Offset within the formatted (rendered Markdown) container. Coordinates are the
+// concatenation of visible text-node characters in document order — the exact same
+// counting AnnotatedMarkdown uses when it re-renders highlights, so the two agree.
+function getFormattedSelectionOffset(
+  container: HTMLElement
+): { offset: number; length: number; text: string } | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const range = sel.getRangeAt(0);
+  if (range.collapsed) return null;
+  if (!container.contains(range.startContainer) || !container.contains(range.endContainer)) return null;
+  const text = range.toString();
+  if (!text.trim() || text.trim().length < 3) return null;
 
-function renderAnnotatedText(
-  content: string,
-  annotations: Annotation[],
-  onClickAnnotation: (ann: Annotation, e: React.MouseEvent) => void
-): React.ReactNode[] {
-  const sorted = [...annotations]
+  const pre = document.createRange();
+  pre.setStart(container, 0);
+  pre.setEnd(range.startContainer, range.startOffset);
+  const offset = (pre.cloneContents().textContent ?? '').length;
+  const length = (range.cloneContents().textContent ?? '').length;
+  if (length < 3) return null;
+  return { offset, length, text };
+}
+
+// Sort annotations by offset and drop any that overlap an earlier one.
+function mergeAnnotations(annotations: Annotation[]): Annotation[] {
+  return [...annotations]
     .sort((a, b) => a.offset - b.offset)
     .reduce<Annotation[]>((acc, ann) => {
       const last = acc[acc.length - 1];
       if (last && ann.offset < last.offset + last.length) return acc;
       return [...acc, ann];
     }, []);
+}
 
+function markStyle(color: ColorKey): React.CSSProperties {
+  const c = COLORS[color];
+  return {
+    background: c.bg,
+    borderBottom: `2px solid ${c.border}`,
+    cursor: 'pointer',
+    borderRadius: '2px',
+    padding: '1px 0',
+  };
+}
+
+// ─── Annotated text renderer (raw <pre> view) ─────────────────────────────────
+
+function renderAnnotatedText(
+  content: string,
+  annotations: Annotation[],
+  onClickAnnotation: (ann: Annotation, e: React.MouseEvent) => void
+): React.ReactNode[] {
+  const sorted = mergeAnnotations(annotations);
   const nodes: React.ReactNode[] = [];
   let pos = 0;
 
   for (const ann of sorted) {
     if (ann.offset > pos) nodes.push(content.slice(pos, ann.offset));
-    const c = COLORS[ann.color];
     nodes.push(
-      <mark
-        key={ann.id}
-        onClick={(e) => onClickAnnotation(ann, e)}
-        style={{
-          background: c.bg,
-          borderBottom: `2px solid ${c.border}`,
-          cursor: 'pointer',
-          borderRadius: '2px',
-          padding: '1px 0',
-        }}
-      >
+      <mark key={ann.id} onClick={(e) => onClickAnnotation(ann, e)} style={markStyle(ann.color)}>
         {content.slice(ann.offset, ann.offset + ann.length)}
       </mark>
     );
@@ -81,6 +109,112 @@ function renderAnnotatedText(
   if (pos < content.length) nodes.push(content.slice(pos));
   return nodes;
 }
+
+// ─── Annotated Markdown renderer (formatted view) ─────────────────────────────
+// Mirrors DocViewer's MarkdownRenderer line-by-line, but threads a running text
+// cursor through every visible string so highlights can be woven into the output.
+
+type Cursor = { pos: number };
+
+// Emit a plain text string, wrapping any portions covered by an annotation in a
+// clickable <mark>. Advances the cursor by the string's full length.
+function emitText(
+  s: string,
+  cur: Cursor,
+  anns: Annotation[],
+  onClick: (a: Annotation, e: React.MouseEvent) => void,
+  keyPrefix: string
+): React.ReactNode {
+  if (s.length === 0) return null;
+  const start = cur.pos;
+  const end = start + s.length;
+  cur.pos = end;
+
+  const overlapping = anns.filter((a) => a.offset < end && a.offset + a.length > start);
+  if (overlapping.length === 0) return s;
+
+  const nodes: React.ReactNode[] = [];
+  let local = 0;
+  for (const a of overlapping) {
+    const aStart = Math.max(a.offset - start, 0);
+    const aEnd = Math.min(a.offset + a.length - start, s.length);
+    if (aStart > local) nodes.push(s.slice(local, aStart));
+    nodes.push(
+      <mark key={`${keyPrefix}-${a.id}-${local}`} onClick={(e) => onClick(a, e)} style={markStyle(a.color)}>
+        {s.slice(aStart, aEnd)}
+      </mark>
+    );
+    local = aEnd;
+  }
+  if (local < s.length) nodes.push(s.slice(local));
+  return nodes;
+}
+
+// Inline **bold** parsing with annotation-aware text emission.
+function renderInline(
+  text: string,
+  cur: Cursor,
+  anns: Annotation[],
+  onClick: (a: Annotation, e: React.MouseEvent) => void,
+  keyPrefix: string
+): React.ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={`${keyPrefix}-b${i}`} style={{ color: '#fff', fontWeight: 700 }}>
+          {emitText(part.slice(2, -2), cur, anns, onClick, `${keyPrefix}-b${i}`)}
+        </strong>
+      );
+    }
+    return (
+      <React.Fragment key={`${keyPrefix}-t${i}`}>
+        {emitText(part, cur, anns, onClick, `${keyPrefix}-t${i}`)}
+      </React.Fragment>
+    );
+  });
+}
+
+const AnnotatedMarkdown: React.FC<{
+  content: string;
+  annotations: Annotation[];
+  onClickAnnotation: (ann: Annotation, e: React.MouseEvent) => void;
+}> = ({ content, annotations, onClickAnnotation }) => {
+  const anns = mergeAnnotations(annotations);
+  const cur: Cursor = { pos: 0 };
+  const lines = content.split('\n');
+
+  return (
+    <div className="markdown-body" style={{ lineHeight: '1.7', fontSize: '0.98rem', color: 'var(--text-primary)' }}>
+      {lines.map((line, idx) => {
+        if (line.startsWith('# ')) {
+          return <h1 key={idx} style={{ margin: '24px 0 12px 0', fontSize: '1.6rem', fontWeight: 800, color: '#fff', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>{emitText(line.slice(2), cur, anns, onClickAnnotation, `h1-${idx}`)}</h1>;
+        }
+        if (line.startsWith('## ')) {
+          return <h2 key={idx} style={{ margin: '20px 0 10px 0', fontSize: '1.35rem', fontWeight: 700, color: '#fff' }}>{emitText(line.slice(3), cur, anns, onClickAnnotation, `h2-${idx}`)}</h2>;
+        }
+        if (line.startsWith('### ')) {
+          return <h3 key={idx} style={{ margin: '16px 0 8px 0', fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>{emitText(line.slice(4), cur, anns, onClickAnnotation, `h3-${idx}`)}</h3>;
+        }
+        if (line === '---') {
+          return <hr key={idx} style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '20px 0' }} />;
+        }
+        if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+          return <li key={idx} style={{ marginLeft: '20px', marginBottom: '6px', listStyleType: 'disc' }}>{renderInline(line.trim().substring(2), cur, anns, onClickAnnotation, `li-${idx}`)}</li>;
+        }
+        if (line.startsWith('<details>') || line.startsWith('</details>')) return null;
+        if (line.startsWith('<summary>')) {
+          const summaryText = line.replace('<summary>', '').replace('</summary>', '');
+          return <summary key={idx} style={{ fontWeight: 600, color: 'var(--accent-primary)', cursor: 'pointer', margin: '4px 0' }}>{emitText(summaryText, cur, anns, onClickAnnotation, `sum-${idx}`)}</summary>;
+        }
+        if (line.trim() === '') {
+          return <div key={idx} style={{ height: '12px' }} />;
+        }
+        return <p key={idx} style={{ marginBottom: '12px' }}>{renderInline(line, cur, anns, onClickAnnotation, `p-${idx}`)}</p>;
+      })}
+    </div>
+  );
+};
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -111,9 +245,13 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textRef  = useRef<HTMLDivElement>(null);
+  const formattedRef = useRef<HTMLDivElement>(null);
 
   // Start in formatted view if content exists, otherwise raw
   const [showRaw, setShowRaw] = useState(!doc.formattedContent);
+
+  // Total rendered text length of the formatted view (for margin-flag positioning)
+  const [formattedLen, setFormattedLen] = useState(1);
 
   // Auto-switch to formatted view when it first becomes available
   useEffect(() => {
@@ -122,12 +260,12 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({
 
   // Selection popup (explain / flashcard / annotate)
   const [popup, setPopup] = useState<{
-    x: number; y: number; text: string; offset: number; length: number;
+    x: number; y: number; text: string; offset: number; length: number; anchor: 'raw' | 'formatted';
   } | null>(null);
 
   // Annotation creation form
   const [annForm, setAnnForm] = useState<{
-    x: number; y: number; text: string; offset: number; length: number;
+    x: number; y: number; text: string; offset: number; length: number; anchor: 'raw' | 'formatted';
   } | null>(null);
   const [annColor, setAnnColor] = useState<ColorKey>('yellow');
   const [annNote,  setAnnNote]  = useState('');
@@ -167,15 +305,27 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({
   };
 
   const handleMouseUp = () => {
-    if (annForm || !showRaw) return; // annotation form open, or in formatted view
+    if (annForm) return; // annotation form open
     const sel = window.getSelection();
     const text = sel?.toString().trim() ?? '';
     if (!text || text.length < 3 || !sel?.rangeCount) { setPopup(null); return; }
-    if (!textRef.current) return;
-    const selInfo = getSelectionCharOffset(textRef.current);
-    if (!selInfo) { setPopup(null); return; }
     const rect = sel.getRangeAt(0).getBoundingClientRect();
-    setPopup({ x: rect.left + rect.width / 2, y: rect.top, ...selInfo });
+
+    // Capture an annotation offset within whichever view is active (the two use
+    // different text-coordinate systems). offset stays -1 if it can't be resolved,
+    // in which case only the text actions (explain/simplify/translate/flashcard)
+    // are offered — those just need the selected text.
+    const anchor: 'raw' | 'formatted' = showRaw ? 'raw' : 'formatted';
+    let offset = -1;
+    let length = text.length;
+    const selInfo = showRaw
+      ? (textRef.current ? getSelectionCharOffset(textRef.current) : null)
+      : (formattedRef.current ? getFormattedSelectionOffset(formattedRef.current) : null);
+    if (selInfo) {
+      offset = selInfo.offset;
+      length = selInfo.length;
+    }
+    setPopup({ x: rect.left + rect.width / 2, y: rect.top, text, offset, length, anchor });
   };
 
   const openAnnotationForm = () => {
@@ -197,6 +347,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({
       offset:    annForm.offset,
       length:    annForm.length,
       createdAt: Date.now(),
+      anchor:    annForm.anchor,
     });
     setAnnForm(null);
     setAnnNote('');
@@ -210,11 +361,12 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({
   };
 
   const handleClickFlag = (ann: Annotation) => {
-    setShowRaw(true); // switch to raw view so offsets match
+    const isFormatted = ann.anchor === 'formatted';
+    setShowRaw(!isFormatted); // switch to the view the offsets belong to
     setTimeout(() => {
       if (scrollRef.current) {
-        scrollRef.current.scrollTop =
-          (ann.offset / Math.max(1, doc.content.length)) * scrollRef.current.scrollHeight;
+        const denom = isFormatted ? formattedLen : Math.max(1, doc.content.length);
+        scrollRef.current.scrollTop = (ann.offset / denom) * scrollRef.current.scrollHeight;
       }
     }, 60);
     setIsEditing(false);
@@ -231,6 +383,18 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({
   };
 
   const annotations = doc.annotations ?? [];
+  // Annotations belong to the view they were created in (offsets differ per view).
+  const rawAnnotations       = annotations.filter((a) => (a.anchor ?? 'raw') === 'raw');
+  const formattedAnnotations = annotations.filter((a) => a.anchor === 'formatted');
+  const currentAnnotations   = showRaw ? rawAnnotations : formattedAnnotations;
+  const flagDenom = showRaw ? Math.max(1, doc.content.length) : formattedLen;
+
+  // Measure the formatted view's rendered text length so margin flags sit roughly right.
+  useLayoutEffect(() => {
+    if (!showRaw && formattedRef.current) {
+      setFormattedLen(Math.max(1, formattedRef.current.textContent?.length ?? 1));
+    }
+  }, [showRaw, doc.formattedContent]);
 
   // Clamp a fixed popup so it stays within the viewport
   const clampPopupX = (x: number, w = 300) =>
@@ -301,10 +465,10 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({
               </span>
             )}
 
-            {/* Annotation count badge */}
-            {annotations.length > 0 && showRaw && (
+            {/* Annotation count badge (for the current view) */}
+            {currentAnnotations.length > 0 && (
               <span style={{ fontSize: '0.7rem', padding: '1px 7px', borderRadius: '8px', background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', fontWeight: 700, flexShrink: 0 }}>
-                {annotations.length} note{annotations.length !== 1 ? 's' : ''}
+                {currentAnnotations.length} note{currentAnnotations.length !== 1 ? 's' : ''}
               </span>
             )}
           </div>
@@ -335,29 +499,35 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({
             style={{ flex: 1, overflowY: 'auto', padding: showRaw ? '30px 16px 30px 40px' : '28px 36px 32px' }}
           >
             {doc.formattedContent && !showRaw ? (
-              /* ── Formatted Markdown view ── */
-              <MarkdownRenderer content={doc.formattedContent} />
+              /* ── Formatted Markdown view (annotatable) ── */
+              <div ref={formattedRef}>
+                <AnnotatedMarkdown
+                  content={doc.formattedContent}
+                  annotations={formattedAnnotations}
+                  onClickAnnotation={handleClickHighlight}
+                />
+              </div>
             ) : (
               /* ── Raw annotatable text ── */
               <div ref={textRef}>
                 <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', wordBreak: 'break-word', lineHeight: 1.8, fontSize: '0.98rem', color: 'var(--text-primary)' }}>
-                  {renderAnnotatedText(doc.content, annotations, handleClickHighlight)}
+                  {renderAnnotatedText(doc.content, rawAnnotations, handleClickHighlight)}
                 </pre>
               </div>
             )}
           </div>
 
-          {/* Margin flag strip — only in raw view (offsets are relative to raw content) */}
+          {/* Margin flag strip — shows the current view's annotations */}
           <div style={{
-            width: showRaw ? '44px' : '0px', flexShrink: 0,
+            width: currentAnnotations.length > 0 ? '44px' : '0px', flexShrink: 0,
             position: 'relative',
-            borderLeft: showRaw ? '1px solid var(--border-color)' : 'none',
+            borderLeft: currentAnnotations.length > 0 ? '1px solid var(--border-color)' : 'none',
             background: 'rgba(0,0,0,0.06)',
             overflow: 'hidden',
             transition: 'width 0.2s ease',
           }}>
-            {annotations.map((ann) => {
-              const topPct = (ann.offset / Math.max(1, doc.content.length)) * 100;
+            {currentAnnotations.map((ann) => {
+              const topPct = (ann.offset / flagDenom) * 100;
               const c = COLORS[ann.color];
               return (
                 <div
@@ -443,8 +613,8 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({
             onClick={() => { onAddSelectionToFlashcard(popup.text); setPopup(null); }}>
             <Plus size={12} />Flashcard
           </button>
-          {/* Annotate — only available in raw text view */}
-          {showRaw && (
+          {/* Annotate — available once a highlight offset is resolved in the active view */}
+          {popup.offset >= 0 && (
             <>
               <div style={{ width: '1px', alignSelf: 'stretch', background: 'var(--border-color)', margin: '2px 1px' }} />
               <button className="btn-secondary"
