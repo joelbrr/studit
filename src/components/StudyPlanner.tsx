@@ -59,8 +59,6 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({
     onSetExamDate(val ? new Date(val).getTime() : null);
   };
 
-  const canGenerate = !!notebook.examDate && documents.length > 0 && geminiApiKeyExists;
-
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-secondary)', overflow: 'hidden' }}>
       {/* Header */}
