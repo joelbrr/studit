@@ -130,6 +130,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const tagScrollRef = useRef<HTMLDivElement>(null);
 
+  const activeNotebook = notebooks.find((n) => n.id === activeNotebookId) ?? null;
+
   // Debounced full-text search across all notebooks
   useEffect(() => {
     const query = searchQuery.trim();
@@ -452,6 +454,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ) : (
         <>
 
+      {/* ════ Master view: list of notebooks (shown when none selected) ════ */}
+      {!activeNotebookId && (
+      <>
       {/* Notebook Section */}
       <div style={{ padding: '16px 16px 8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Notebooks</span>
@@ -483,9 +488,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       {/* Notebooks List */}
-      <div className="no-scrollbar" style={{ flex: '0 0 160px', overflowY: 'auto', padding: '0 8px 12px 8px', borderBottom: '1px solid var(--border-color)' }}>
+      <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '0 8px 12px 8px' }}>
         {notebooks.length === 0 ? (
-          <div style={{ padding: '12px', fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+          <div style={{ padding: '24px 12px', fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center' }}>
             No notebooks. Add one to start.
           </div>
         ) : (
@@ -542,16 +547,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <Trash2 size={12} />
                 </button>
+                <ChevronRight size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
               </div>
             </div>
           ))
         )}
       </div>
+      </>
+      )}
 
-      {/* Sources List for Selected Notebook */}
+      {/* ════ Detail view: sources within the selected notebook ════ */}
       {activeNotebookId && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '16px 16px 8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          {/* Back to notebooks + current-notebook indicator */}
+          <div style={{ padding: '12px 12px 10px 12px', borderBottom: '1px solid var(--border-color)' }}>
+            <button
+              onClick={() => { setActiveNotebookId(null); setActiveDocId(null); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.74rem', fontWeight: 600, padding: '2px 4px', marginBottom: '7px' }}
+              title="Back to all notebooks"
+            >
+              <ChevronLeft size={14} /> All notebooks
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 4px' }}>
+              <Folder size={17} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+              <span style={{ fontSize: '0.97rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }} title={activeNotebook?.name}>
+                {activeNotebook?.name}
+              </span>
+              {activeNotebook?.examDate && (() => {
+                const dl = Math.max(0, Math.ceil((activeNotebook.examDate! - Date.now()) / 86400000));
+                const clr = dl <= 2 ? '#ef4444' : dl <= 7 ? '#f59e0b' : '#10b981';
+                return (
+                  <span style={{ fontSize: '0.62rem', fontWeight: 700, color: clr, background: `${clr}22`, border: `1px solid ${clr}55`, borderRadius: '8px', padding: '1px 6px', flexShrink: 0 }}>
+                    {dl === 0 ? 'Exam today' : `${dl}d to exam`}
+                  </span>
+                );
+              })()}
+            </div>
+          </div>
+
+          <div style={{ padding: '14px 16px 8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Sources</span>
             <div style={{ display: 'flex', gap: '4px' }}>
               <button
@@ -865,13 +899,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               ))
             )}
           </div>
-        </div>
-      )}
-
-      {!activeNotebookId && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '24px', textAlign: 'center', color: 'var(--text-muted)', gap: '10px' }}>
-          <ChevronRight size={24} style={{ opacity: 0.5 }} />
-          <span style={{ fontSize: '0.85rem' }}>Select or create a notebook to begin importing study materials.</span>
         </div>
       )}
         </>

@@ -143,9 +143,9 @@ export const App: React.FC = () => {
     try {
       const list = await dbService.getNotebooks();
       setNotebooks(list);
-      if (list.length > 0 && !activeNotebookId) {
-        setActiveNotebookId(list[0].id);
-      }
+      // Note: we intentionally do NOT auto-select a notebook here. The sidebar opens
+      // on the notebook list (master view); the user drills into a notebook to see
+      // its sources (detail view).
     } catch (err) {
       console.error('Failed to load notebooks', err);
     }
