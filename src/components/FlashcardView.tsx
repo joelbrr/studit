@@ -95,7 +95,16 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
           </span>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={onGenerate} disabled={!geminiApiKeyExists} className="btn-secondary" style={{ padding: '7px 14px', fontSize: '0.8rem' }}>
+          <button
+            onClick={() => {
+              if (confirm(`Regenerate flashcards?\n\nThis will permanently delete the current ${deck.cards.length} card${deck.cards.length !== 1 ? 's' : ''} (including your review progress) and create a brand-new set.`)) {
+                onGenerate();
+              }
+            }}
+            disabled={!geminiApiKeyExists}
+            className="btn-secondary"
+            style={{ padding: '7px 14px', fontSize: '0.8rem' }}
+          >
             <RotateCcw size={13} /> Regenerate
           </button>
           <button onClick={startStudy} className="btn-primary" style={{ padding: '8px 18px', fontSize: '0.85rem' }}>

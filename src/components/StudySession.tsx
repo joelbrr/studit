@@ -37,22 +37,41 @@ const CONFIDENCE_COLORS: Record<number, { bg: string; border: string; color: str
 
 // ─── Calibration report ───────────────────────────────────────────────────────
 
-const CalibrationReport: React.FC<{ results: SessionResult[] }> = ({ results }) => {
+const CalibrationReport: React.FC<{ results: SessionResult[]; cards: SessionCard[] }> = ({ results, cards }) => {
   if (results.length === 0) return null;
+  const cardById = new Map(cards.map(c => [c.id, c]));
   const byLevel: Record<number, { easy: number; medium: number; hard: number; total: number }> = {};
   for (const r of results) {
     if (!byLevel[r.confidence]) byLevel[r.confidence] = { easy: 0, medium: 0, hard: 0, total: 0 };
     byLevel[r.confidence][r.rating]++;
     byLevel[r.confidence].total++;
   }
-  const overconfident = results.filter(r => r.confidence >= 4 && r.rating === 'hard').length;
-  const hiddenGems   = results.filter(r => r.confidence <= 2 && r.rating === 'easy').length;
+  const overconfidentResults = results.filter(r => r.confidence >= 4 && r.rating === 'hard');
+  const hiddenGemResults     = results.filter(r => r.confidence <= 2 && r.rating === 'easy');
+  const overconfident = overconfidentResults.length;
+  const hiddenGems    = hiddenGemResults.length;
   const wellMatched  = results.filter(r => {
     if (r.confidence >= 4) return r.rating !== 'hard';
     if (r.confidence <= 2) return r.rating !== 'easy';
     return true;
   }).length;
   const pct = Math.round((wellMatched / results.length) * 100);
+
+  // Render the question fronts behind a set of results, as a compact bulleted list.
+  const cardList = (rows: SessionResult[], color: string) => (
+    <ul style={{ margin: '8px 0 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+      {rows.map((r, i) => {
+        const c = cardById.get(r.cardId);
+        if (!c) return null;
+        return (
+          <li key={`${r.cardId}-${i}`} style={{ display: 'flex', gap: '7px', alignItems: 'baseline', fontSize: '0.78rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>
+            <span style={{ color, flexShrink: 0, fontWeight: 700 }}>•</span>
+            <span style={{ overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }}>{c.front}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
 
   return (
     <div style={{ width: '100%', maxWidth: '520px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -96,11 +115,13 @@ const CalibrationReport: React.FC<{ results: SessionResult[] }> = ({ results }) 
         {overconfident > 0 && (
           <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(244,63,94,0.07)', border: '1px solid rgba(244,63,94,0.2)', fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
             ⚠️ <strong style={{ color: '#f87171' }}>Overconfident on {overconfident} card{overconfident > 1 ? 's' : ''}</strong> — you felt confident (4–5) but found {overconfident > 1 ? 'them' : 'it'} hard. These are your priority review cards.
+            {cardList(overconfidentResults, '#f87171')}
           </div>
         )}
         {hiddenGems > 0 && (
           <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.2)', fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
             💎 <strong style={{ color: '#34d399' }}>Hidden gems: {hiddenGems} card{hiddenGems > 1 ? 's' : ''}</strong> — you felt unsure (1–2) but actually knew {hiddenGems > 1 ? 'them' : 'it'}. Your knowledge is broader than you think.
+            {cardList(hiddenGemResults, '#34d399')}
           </div>
         )}
         {overconfident === 0 && hiddenGems === 0 && (
@@ -243,7 +264,7 @@ export const StudySession: React.FC<StudySessionProps> = ({ queue, geminiApiKeyE
         </div>
         {sessionResults.length > 0 && (
           <div style={{ width: '100%', maxWidth: '520px', borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
-            <CalibrationReport results={sessionResults} />
+            <CalibrationReport results={sessionResults} cards={queue} />
           </div>
         )}
         <button onClick={onExit} className="btn-primary" style={{ marginTop: '4px' }}>
